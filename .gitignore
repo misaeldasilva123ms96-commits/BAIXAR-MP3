@@ -1,0 +1,20 @@
+# Ferramentas baixadas automaticamente
+ferramentas/*
+!ferramentas/.gitkeep
+
+# Dados e preferências locais
+configuracao.txt
+historico_downloads.txt
+ultimo_download.log
+logs/
+temporarios/
+
+# Downloads temporários/interrompidos
+*.download
+*.zip
+
+# Arquivos do Windows e editores
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/

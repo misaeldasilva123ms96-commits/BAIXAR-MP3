@@ -1,0 +1,24 @@
+﻿BAIXADOR MP3 V2 — ALTERAÇÕES
+================================
+
+Correções
+- Removido o prefixo "NA -" de vídeos individuais.
+- Log gravado integralmente em UTF-8, sem caracteres NUL.
+- Link é lido diretamente pelo PowerShell, evitando problemas com caracteres especiais no CMD.
+
+Novidades
+- Menu principal.
+- Configurações persistentes.
+- Seleção visual da pasta de destino.
+- Qualidade selecionável.
+- Organização por nome da playlist.
+- Download parcial por posição inicial/final.
+- Abertura automática da pasta de saída.
+- Logs datados.
+- Atualização e diagnóstico das ferramentas.
+- Retentativas de rede e downloads de fragmentos em paralelo.
+
+Preparação para o GitHub
+- Ferramentas, logs, histórico e preferências locais não são publicados.
+- Downloads de ferramentas agora usam arquivo temporário e descartam falhas parciais.
+- Adicionados README em Markdown, configuração de exemplo e validação automática.

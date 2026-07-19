@@ -1,0 +1,46 @@
+name: Validação
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Validar sintaxe do PowerShell
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path '.\Baixador_MP3_V2.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          )
+
+          if ($errors.Count -gt 0) {
+            $errors | Format-List
+            throw "O script contém erros de sintaxe."
+          }
+
+      - name: Verificar arquivos essenciais
+        shell: powershell
+        run: |
+          $required = @(
+            'Abrir_Baixador_MP3_V2.bat',
+            'Baixador_MP3_V2.ps1',
+            'configuracao.exemplo.txt',
+            'README.md'
+          )
+
+          $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_) }
+          if ($missing) {
+            throw "Arquivos ausentes: $($missing -join ', ')"
+          }

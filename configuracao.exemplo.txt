@@ -1,0 +1,7 @@
+# Configurações do Baixador MP3 V2
+# O programa cria configuracao.txt automaticamente na primeira execução.
+
+PASTA_DESTINO=%USERPROFILE%\Downloads\Musicas_MP3
+QUALIDADE_PADRAO=0
+ORGANIZAR_POR_PLAYLIST=SIM
+ABRIR_PASTA_AO_FINAL=SIM

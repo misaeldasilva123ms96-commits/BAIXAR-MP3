@@ -1,0 +1,41 @@
+﻿BAIXADOR MP3 V2 — WINDOWS 10/11
+================================
+
+COMO ABRIR
+1. Extraia todo o ZIP para uma pasta.
+2. Dê dois cliques em "Abrir_Baixador_MP3_V2.bat".
+3. Escolha a opção 1 e cole o link da playlist ou vídeo.
+
+MELHORIAS DA VERSÃO 2
+- Menu completo dentro do CMD.
+- Corrige o prefixo "NA -" em vídeos individuais.
+- Corrige a codificação do arquivo de log.
+- Cria automaticamente uma pasta com o nome da playlist.
+- Permite baixar somente uma faixa de itens da playlist.
+- Permite escolher VBR 0, 320, 256, 192 ou 128 kbps.
+- Abre a pasta de músicas ao terminar.
+- Possui tela para trocar a pasta de destino.
+- Permite atualizar e verificar yt-dlp, Deno e FFmpeg.
+- Mantém histórico para não baixar novamente o mesmo vídeo.
+- Cria logs separados por execução.
+- Usa arquivos temporários em pasta própria.
+- Faz novas tentativas quando a conexão falha.
+
+PASTA PADRÃO
+%USERPROFILE%\Downloads\Musicas_MP3
+
+QUALIDADE
+A opção recomendada é "Alta — VBR 0".
+Selecionar 320 kbps não melhora uma fonte que já possui qualidade inferior; apenas define o bitrate do MP3 gerado.
+
+HISTÓRICO
+O arquivo "historico_downloads.txt" evita downloads repetidos.
+A opção 6 do menu limpa esse histórico, mas não apaga os MP3.
+
+FERRAMENTAS PORTÁTEIS
+O programa usa yt-dlp, FFmpeg, ffprobe e Deno. Não exige Python.
+Na primeira abertura, os componentes ausentes são baixados automaticamente.
+Downloads incompletos são descartados e refeitos com segurança.
+
+USO RESPONSÁVEL
+Use somente conteúdos próprios, de domínio público, licenciados ou para os quais você tenha autorização.
