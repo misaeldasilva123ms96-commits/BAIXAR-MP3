@@ -7,6 +7,44 @@ exige instalação de Python.
 > Use somente conteúdo próprio, licenciado, em domínio público ou para o qual
 > você tenha autorização. Respeite direitos autorais e os termos da plataforma.
 
+## Instalação rápida e primeiro uso
+
+### 1. Baixar e abrir o programa
+
+1. Clique no botão verde **Code** desta página.
+2. Escolha **Download ZIP**.
+3. Extraia todo o conteúdo do ZIP para uma pasta.
+4. Abra a pasta extraída.
+5. Dê dois cliques em `Abrir_Baixador_MP3_V2.bat`.
+
+### 2. Aguardar a preparação inicial
+
+Na primeira abertura, o programa baixa automaticamente yt-dlp, FFmpeg, ffprobe
+e Deno. Mantenha a internet conectada e aguarde até aparecer o menu principal:
+
+```text
+1. Baixar playlist ou vídeo em MP3
+2. Abrir pasta de músicas
+3. Configurações
+4. Atualizar e verificar ferramentas
+5. Abrir o último log
+6. Limpar histórico de downloads
+0. Sair
+```
+
+### 3. Fazer o primeiro download
+
+1. Digite `1` e pressione **Enter**.
+2. Cole a URL de um vídeo ou playlist do YouTube.
+3. Pressione **Enter** para usar a qualidade recomendada, **VBR 0**.
+4. Pressione **Enter** para manter a organização padrão.
+5. Pressione **Enter** nos campos inicial e final para baixar todo o conteúdo.
+6. Confira o resumo, digite `S` e pressione **Enter**.
+7. Aguarde a conclusão. A pasta com os MP3 será aberta automaticamente.
+
+Pronto: nas próximas vezes, basta abrir o mesmo arquivo `.bat` e escolher a
+opção **1**.
+
 ## Recursos
 
 - download de vídeo individual ou playlist;
