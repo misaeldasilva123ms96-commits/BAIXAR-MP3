@@ -243,6 +243,9 @@ func createTestJob(t *testing.T, h http.Handler) string {
 	if err := json.Unmarshal(w.Body.Bytes(), &job); err != nil {
 		t.Fatal(err)
 	}
+	if job.State != core.StateQueued {
+		t.Fatalf("accepted response returned %s instead of %s", job.State, core.StateQueued)
+	}
 	return job.ID
 }
 func waitForState(t *testing.T, h http.Handler, id string, state core.JobState) *Job {

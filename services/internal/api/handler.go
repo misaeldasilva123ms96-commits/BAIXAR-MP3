@@ -230,8 +230,8 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	h.jobs[id] = job
 	h.mu.Unlock()
-	go h.run(ctx, job)
 	writeJSON(w, http.StatusAccepted, job)
+	go h.run(ctx, job)
 }
 
 func (h *Handler) run(ctx context.Context, job *Job) {
