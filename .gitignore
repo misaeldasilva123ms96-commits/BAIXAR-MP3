@@ -18,3 +18,13 @@ Thumbs.db
 Desktop.ini
 .vscode/
 .idea/
+
+# Plataforma V3
+node_modules/
+apps/web/node_modules/
+apps/web/dist/
+*.tsbuildinfo
+dados/
+MP3_Downloader.exe
+dist/
+coverage/
