@@ -1,223 +1,121 @@
-# BAIXAR MP3
+# MP3 Downloader
 
-Aplicativo portátil para Windows 10/11 que baixa vídeos ou playlists autorizadas
-do YouTube e converte o áudio para MP3. A interface funciona no terminal e não
-exige instalação de Python.
+[![CI](https://github.com/misaeldasilva123ms96-commits/BAIXAR-MP3/actions/workflows/ci.yml/badge.svg)](https://github.com/misaeldasilva123ms96-commits/BAIXAR-MP3/actions/workflows/ci.yml)
+[![Pages](https://github.com/misaeldasilva123ms96-commits/BAIXAR-MP3/actions/workflows/pages.yml/badge.svg)](https://misaeldasilva123ms96-commits.github.io/BAIXAR-MP3/)
+[![Release](https://img.shields.io/github/v/release/misaeldasilva123ms96-commits/BAIXAR-MP3)](https://github.com/misaeldasilva123ms96-commits/BAIXAR-MP3/releases/latest)
 
-> Use somente conteúdo próprio, licenciado, em domínio público ou para o qual
-> você tenha autorização. Respeite direitos autorais e os termos da plataforma.
+**[Usar Online](https://misaeldasilva123ms96-commits.github.io/BAIXAR-MP3/)** · **[Baixar para Windows](https://github.com/misaeldasilva123ms96-commits/BAIXAR-MP3/releases/latest)**
 
-## Instalação rápida e primeiro uso
+Baixe vídeos ou playlists autorizadas como MP3 usando a mesma interface no navegador e no Windows. O V3 escolhe explicitamente entre processamento temporário no backend e processamento local; o terminal V2 permanece disponível durante a transição.
 
-### 1. Baixar e abrir o programa
+> Use apenas conteúdo próprio, licenciado, em domínio público ou para o qual você tenha autorização. Respeite direitos autorais e os termos da plataforma.
 
-1. Clique no botão verde **Code** desta página.
-2. Escolha **Download ZIP**.
-3. Extraia todo o conteúdo do ZIP para uma pasta.
-4. Abra a pasta extraída.
-5. Dê dois cliques em `Abrir_Baixador_MP3_V2.bat`.
+## Escolha como usar
 
-### 2. Aguardar a preparação inicial
+| Modo | Melhor para | Onde o áudio é processado |
+| --- | --- | --- |
+| **Online** | Uso rápido sem instalar | Backend temporário; o resultado é baixado pelo navegador |
+| **Windows** | Uso frequente e playlists maiores | Engine local; o MP3 é salvo diretamente no computador |
+| **Local via Web** | Quem já possui o Engine | Engine em `127.0.0.1`, após autorização por código local |
 
-Na primeira abertura, o programa baixa automaticamente yt-dlp, FFmpeg, ffprobe
-e Deno. Mantenha a internet conectada e aguarde até aparecer o menu principal:
-
-```text
-1. Baixar playlist ou vídeo em MP3
-2. Abrir pasta de músicas
-3. Configurações
-4. Atualizar e verificar ferramentas
-5. Abrir o último log
-6. Limpar histórico de downloads
-0. Sair
-```
-
-### 3. Fazer o primeiro download
-
-1. Digite `1` e pressione **Enter**.
-2. Cole a URL de um vídeo ou playlist do YouTube.
-3. Pressione **Enter** para usar a qualidade recomendada, **VBR 0**.
-4. Pressione **Enter** para manter a organização padrão.
-5. Pressione **Enter** nos campos inicial e final para baixar todo o conteúdo.
-6. Confira o resumo, digite `S` e pressione **Enter**.
-7. Aguarde a conclusão. A pasta com os MP3 será aberta automaticamente.
-
-Pronto: nas próximas vezes, basta abrir o mesmo arquivo `.bat` e escolher a
-opção **1**.
+O site não exige o Engine. Quando ele não está disponível, o modo online continua selecionável. A aplicação nunca troca silenciosamente do modo local para o cloud.
 
 ## Recursos
 
-- download de vídeo individual ou playlist;
-- MP3 em VBR 0, 320, 256, 192 ou 128 kbps;
-- organização automática por playlist;
-- seleção de uma faixa de itens da playlist;
-- metadados e miniatura incorporados;
-- histórico para evitar downloads repetidos;
-- logs por execução;
-- atualização e diagnóstico das ferramentas pelo próprio menu.
+- vídeo individual, playlist completa e intervalo de itens;
+- VBR 0 recomendado, 320, 256, 192 e 128 kbps;
+- análise real de título, miniatura, artista, duração e itens quando o provedor os informa;
+- progresso derivado da saída real do yt-dlp, sem barra artificial;
+- miniatura e metadados incorporados;
+- histórico persistente local no Windows e histórico somente no navegador no modo web;
+- cancelamento, fila controlada e expiração automática no cloud;
+- mesma interface responsiva e acessível nos três modos.
 
-## Requisitos
+## Windows: primeira execução
 
-- Windows 10 ou Windows 11 de 64 bits;
-- PowerShell 5.1 ou mais recente;
-- conexão com a internet;
-- espaço em disco para as ferramentas e os arquivos de áudio.
+1. Baixe `MP3_Downloader_v3.0.0_Windows.zip` em **Releases**.
+2. Compare o SHA-256 com `checksums.sha256` e extraia todo o ZIP.
+3. Abra `ABRIR_MP3_DOWNLOADER.bat`.
+4. O Engine abre a interface em `http://127.0.0.1:38765` e mostra o código de conexão local.
+5. Cole uma URL, escolha a qualidade e confirme o resumo.
 
-## Instalação passo a passo
+O pacote inclui `MP3_Downloader.exe`, yt-dlp, FFmpeg, ffprobe, Deno e a interface. Python não é necessário. O V2 continua acessível por `Abrir_Baixador_MP3_V2.bat`.
 
-O programa é portátil: não existe instalador e não é necessário instalar
-Python.
+## Privacidade
 
-1. Entre na página deste repositório no GitHub.
-2. Clique no botão verde **Code**.
-3. Clique em **Download ZIP**.
-4. Quando o download terminar, clique com o botão direito no arquivo ZIP e
-   escolha **Extrair Tudo**.
-5. Abra a pasta extraída. Não execute o programa diretamente de dentro do ZIP.
-6. Dê dois cliques em `Abrir_Baixador_MP3_V2.bat`.
-7. Na primeira execução, aguarde o download automático de:
-   - yt-dlp;
-   - FFmpeg e ffprobe;
-   - Deno.
-8. Quando aparecer o menu **BAIXADOR MP3 V2**, a instalação está pronta.
+- **Online:** a URL e o conteúdo necessário à conversão passam pelo backend. Arquivos são temporários, expiram pelo TTL configurado e não formam uma biblioteca permanente.
+- **Windows/local:** o processamento ocorre no computador. O Engine escuta somente em `127.0.0.1` e exige um token para analisar, iniciar ou cancelar downloads.
+- O backend não associa histórico permanente a usuários. O navegador guarda apenas a lista local exibida na interface.
+- Logs usam IDs de job e não devem registrar cookies, tokens, cabeçalhos privados ou URLs completas.
 
-As ferramentas ficam dentro da pasta `ferramentas`. Nas próximas aberturas, o
-programa reutiliza os arquivos que já foram baixados.
+## Segurança e limites do serviço público
 
-### Se o Windows bloquear a abertura
+O backend aceita somente URLs HTTP(S) de hosts oficiais do YouTube, rejeita credenciais embutidas, protocolos locais, localhost e redes privadas/reservadas. A API usa parâmetros tipados; não existe endpoint de execução nem passagem livre de flags do yt-dlp.
 
-1. Clique com o botão direito no ZIP baixado e escolha **Propriedades**.
-2. Se aparecer a opção **Desbloquear**, marque-a e clique em **Aplicar**.
-3. Extraia o ZIP novamente e abra `Abrir_Baixador_MP3_V2.bat`.
+Limites configuráveis por ambiente incluem concorrência, requisições por minuto, quantidade de itens, timeout e TTL. Veja [SECURITY.md](SECURITY.md) e [docs/DEPLOY.md](docs/DEPLOY.md).
 
-Não é necessário desativar o antivírus nem alterar permanentemente a política
-de execução do PowerShell.
+## Configuração
 
-## Como baixar uma música
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `VITE_MP3_API_BASE_URL` | vazio | URL HTTPS do backend inserida no build do Pages |
+| `MP3_ALLOWED_ORIGINS` | origem oficial do Pages | CORS permitido no cloud |
+| `MP3_MAX_CONCURRENT` | `2` | jobs cloud simultâneos |
+| `MP3_MAX_PLAYLIST_ITEMS` | `100` | limite de análise/playlist cloud |
+| `MP3_FILE_TTL` | `30m` | retenção do resultado temporário |
+| `MP3_JOB_TIMEOUT` | `30m` | duração máxima de um job cloud |
+| `MP3_RATE_LIMIT` | `30` | requisições por IP e minuto |
+| `MP3_GLOBAL_RATE_LIMIT` | `300` | requisições globais por minuto e instância |
+| `MP3_MAX_OUTPUT_MB` | `500` | teto do resultado temporário por job |
+| `MP3_DOWNLOAD_DIR` | Downloads do usuário | pasta do modo Windows |
 
-1. Abra `Abrir_Baixador_MP3_V2.bat`.
-2. No menu principal, digite **1** e pressione **Enter**.
-3. Copie a URL do vídeo no YouTube.
-4. Cole a URL na janela do programa e pressione **Enter**.
-5. Escolha a qualidade:
-   - **1 — VBR 0:** melhor opção geral e recomendada;
-   - **2 — 320 kbps:** bitrate fixo alto;
-   - **3 — 256 kbps:** boa qualidade com arquivo um pouco menor;
-   - **4 — 192 kbps:** equilíbrio entre qualidade e tamanho;
-   - **5 — 128 kbps:** menor tamanho.
-6. Quando o programa perguntar sobre pasta de playlist, pressione **Enter** para
-   manter a opção padrão. Em um vídeo individual, isso não cria uma pasta
-   desnecessária.
-7. Deixe os campos **Começar pelo item** e **Terminar no item** vazios,
-   pressionando **Enter** em cada um.
-8. Confira o resumo, digite **S** e pressione **Enter**.
-9. Aguarde a mensagem **Download concluído com sucesso**.
-
-Ao terminar, a pasta das músicas é aberta automaticamente.
-
-> Escolher 320 kbps não aumenta a qualidade do áudio original. Para a maioria
-> dos casos, use **VBR 0**.
-
-## Como baixar uma playlist
-
-1. Abra o programa e escolha a opção **1**.
-2. Cole a URL completa da playlist.
-3. Escolha a qualidade desejada.
-4. Responda **S** para criar uma pasta com o nome da playlist.
-5. Para baixar a playlist inteira, deixe os campos inicial e final vazios.
-6. Para baixar somente uma parte, informe as posições. Exemplo:
-   - **Começar pelo item:** `5`
-   - **Terminar no item:** `12`
-7. Confira o resumo, digite **S** e aguarde a conclusão.
-
-O programa continua quando um item isolado está indisponível e registra os
-detalhes no log.
-
-## Onde ficam as músicas
-
-Por padrão, os arquivos são salvos em:
+## Arquitetura
 
 ```text
-%USERPROFILE%\Downloads\Musicas_MP3
+apps/web (React + TypeScript)
+        │ DownloadProvider
+        ├────────────── Cloud API (Go + Docker)
+        │                    └─ yt-dlp + FFmpeg + Deno → arquivo temporário
+        └────────────── Engine local (Go, 127.0.0.1 + token)
+                             └─ yt-dlp + FFmpeg + Deno → pasta do usuário
 ```
 
-Há duas formas de abrir essa pasta:
+Contratos tipados e estados são compartilhados entre providers; o frontend não conhece flags do yt-dlp. Detalhes e decisões estão em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) e a auditoria do legado em [docs/V3_AUDIT.md](docs/V3_AUDIT.md).
 
-1. escolha a opção **2 — Abrir pasta de músicas** no menu; ou
-2. aguarde o programa abri-la automaticamente ao final do download.
+## Desenvolvimento
 
-## Como configurar o programa
+Requisitos: Node 24.15+, Go 1.26.5+ e PowerShell 7.
 
-Escolha **3 — Configurações** no menu principal. Nessa tela é possível:
+```powershell
+npm ci --ignore-scripts
+npm test
+npm run lint
+npm run typecheck
+npm run build
+go test ./services/...
+go vet ./services/...
+pwsh -NoProfile -File .\tests\legacy-contract.ps1
+```
 
-1. selecionar outra pasta de destino;
-2. alterar a qualidade padrão;
-3. ativar ou desativar a organização por playlist;
-4. ativar ou desativar a abertura automática da pasta ao terminar.
+Backend local de desenvolvimento:
 
-As escolhas são gravadas localmente em `configuracao.txt`.
+```powershell
+$env:MP3_ALLOWED_ORIGINS='http://localhost:5173'
+go run ./services/cmd/web-api
+npm run dev --workspace apps/web
+```
 
-## Opções do menu
+## Publicação
 
-| Opção | Função |
-| --- | --- |
-| **1** | Baixar um vídeo ou playlist em MP3 |
-| **2** | Abrir a pasta onde as músicas são salvas |
-| **3** | Alterar pasta, qualidade e organização |
-| **4** | Atualizar e verificar yt-dlp, Deno e FFmpeg |
-| **5** | Abrir o log do último download |
-| **6** | Limpar o histórico que impede downloads repetidos |
-| **0** | Fechar o programa |
+- Pull requests executam lint, testes, build, segurança, smoke test Windows e Docker, mas não publicam.
+- `main` publica o Pages somente após todos os passos do workflow Pages e exige a variável `MP3_API_BASE_URL`.
+- tags `vX.Y.Z` geram o ZIP Windows, hashes SHA-256 e atestação GitHub; nenhuma release existente é substituída.
 
-## Histórico de downloads
+Consulte [Deploy](docs/DEPLOY.md), [Release](docs/RELEASE.md), [Guia do usuário](docs/GUIA_DO_USUARIO.md) e [CHANGELOG.md](CHANGELOG.md).
 
-O arquivo `historico_downloads.txt` registra os vídeos já processados e evita
-que a mesma música seja baixada novamente.
+## Limitações
 
-Para baixar novamente uma música já registrada:
-
-1. escolha a opção **6**;
-2. digite `LIMPAR` para confirmar;
-3. inicie o download novamente.
-
-Limpar o histórico não apaga nenhum MP3.
-
-## Privacidade e arquivos locais
-
-As ferramentas baixadas, preferências, URLs já processadas, logs e arquivos
-temporários ficam somente no computador do usuário. Esses itens são ignorados
-pelo Git e não fazem parte do repositório.
-
-## Estrutura
-
-- `Abrir_Baixador_MP3_V2.bat`: inicializador para dois cliques;
-- `Baixador_MP3_V2.ps1`: aplicativo principal;
-- `configuracao.exemplo.txt`: referência das configurações disponíveis;
-- `LEIA-ME.txt`: instruções em texto simples;
-- `ALTERACOES_V2.txt`: histórico da versão 2.
-
-## Solução de problemas
-
-### O programa não abre
-
-- Confirme que todos os arquivos foram extraídos do ZIP.
-- Tente o procedimento **Se o Windows bloquear a abertura**.
-- Mantenha o arquivo `.bat` e o arquivo `.ps1` na mesma pasta.
-
-### Uma ferramenta não foi baixada
-
-- Confirme que há conexão com a internet.
-- Feche o programa e abra novamente.
-- Use a opção **4** para atualizar e verificar as ferramentas.
-- Se necessário, apague somente o arquivo com problema dentro de `ferramentas`;
-  ele será baixado novamente.
-
-### O download falhou
-
-- Confirme que a URL é de `youtube.com` ou `youtu.be`.
-- Verifique se o vídeo está disponível no navegador.
-- Consulte `ultimo_download.log` ou a pasta `logs`.
-- Use a opção **4** e tente novamente.
-
-Alguns vídeos podem estar indisponíveis por restrição regional, privacidade,
-autenticação ou proteção de direitos autorais.
+- O GitHub Pages hospeda apenas o frontend; uma instância separada do backend é obrigatória para processamento online.
+- Conteúdo privado, autenticado, protegido por DRM ou indisponível não é suportado.
+- Seleção individual de faixas fica para uma fase posterior; o V3 inicial suporta playlist completa e intervalo.
+- Disponibilidade e compatibilidade dependem das plataformas de origem, do yt-dlp e dos limites do provedor de backend.
