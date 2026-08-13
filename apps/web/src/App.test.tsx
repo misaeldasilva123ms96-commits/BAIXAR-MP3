@@ -43,4 +43,26 @@ describe('MP3 Downloader interface', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Verificar ferramentas' })).toBeVisible());
     expect(screen.getByRole('link', { name: 'Atualizar ferramentas' })).toHaveAttribute('href', expect.stringContaining('/releases/latest'));
   });
+
+  it('routes a saved local job to the local provider after switching to cloud', async () => {
+    localStorage.setItem('mp3-engine-token', 'secret');
+    localStorage.setItem('mp3-download-history', JSON.stringify([{ id: 'job_local', mode: 'LOCAL_ENGINE', state: 'COMPLETED', request: { url: 'https://youtu.be/abc', quality: 'vbr0', organizePlaylist: true }, progress: { state: 'COMPLETED' }, result: { format: 'mp3' }, createdAt: '', updatedAt: '' }]));
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:local') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const requests: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const target = String(input); requests.push(target);
+      if (target.endsWith('/health')) throw new TypeError('engine offline');
+      if (target.endsWith('/downloads/job_local/file')) {
+        expect(init?.headers).toEqual(expect.objectContaining({ 'X-MP3-Engine-Token': 'secret' }));
+        return new Response(new Blob(['mp3']), { status: 200 });
+      }
+      return new Response('{}', { status: 404 });
+    });
+    render(<App />);
+    await userEvent.click(screen.getByRole('button', { name: 'Histórico' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Baixar arquivo' }));
+    await waitFor(() => expect(requests).toContain('http://127.0.0.1:38765/downloads/job_local/file'));
+  });
 });

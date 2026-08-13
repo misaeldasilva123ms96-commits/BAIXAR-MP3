@@ -31,7 +31,7 @@ Não grave secrets na imagem. Monte armazenamento temporário apenas se o proved
 ## Pages
 
 1. Faça o deploy HTTPS do backend.
-2. No repositório, crie a variável Actions `MP3_API_BASE_URL` com a origem da API, sem barra final.
+2. No repositório, crie a variável Actions `MP3_API_BASE_URL` com a origem da API, sem barra final. O workflow Pages mapeia essa variável para `VITE_MP3_API_BASE_URL` durante o build do Vite.
 3. Configure GitHub Pages com **GitHub Actions** como source.
 4. Após merge em `main`, o workflow testa, gera assets relativos compatíveis com `/BAIXAR-MP3/` e publica.
 

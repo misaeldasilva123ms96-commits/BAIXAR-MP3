@@ -32,6 +32,20 @@ func (blockingProcessor) Start(ctx context.Context, _ string, _ core.DownloadReq
 
 type fileProcessor struct{ path string }
 
+type gatedProcessor struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p gatedProcessor) Analyze(_ context.Context, rawURL string) (core.Analysis, error) {
+	return core.Analysis{Type: "video", WebpageURL: rawURL}, nil
+}
+func (p gatedProcessor) Start(_ context.Context, _ string, _ core.DownloadRequest, _ func(core.ProgressEvent)) (core.DownloadResult, error) {
+	close(p.started)
+	<-p.release
+	return core.DownloadResult{Title: "Track", Format: "mp3", FileName: "track.mp3"}, nil
+}
+
 type memorySettings struct{ value core.Settings }
 
 func (s *memorySettings) Get() core.Settings             { return s.value }
@@ -140,10 +154,15 @@ func TestDesktopMutationsAlsoRequireEngineToken(t *testing.T) {
 func TestLocalSettingsAreTypedAndProtected(t *testing.T) {
 	store := &memorySettings{value: core.Settings{DefaultQuality: core.QualityVBR0, DownloadDirectory: t.TempDir()}}
 	h := NewHandler(Config{Mode: core.ModeDesktopLocal, EngineToken: "expected", Settings: store}, fakeProcessor{})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/settings", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unprotected settings read returned %d", w.Code)
+	}
 	requestSettings := core.Settings{DefaultQuality: core.Quality192, DownloadDirectory: filepath.Join(t.TempDir(), "Music"), AvoidDuplicates: true, EmbedThumbnail: true, EmbedMetadata: true}
 	encoded, _ := json.Marshal(requestSettings)
 	payload := string(encoded)
-	w := httptest.NewRecorder()
+	w = httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodPut, "/settings", bytes.NewBufferString(payload)))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("unprotected settings returned %d", w.Code)
@@ -228,6 +247,133 @@ func TestCloudJobCapacityIsBounded(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/downloads", body))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("full job store returned %d", w.Code)
+	}
+}
+
+func TestDownloadRequestIsValidatedBeforeQueueing(t *testing.T) {
+	h := NewHandler(Config{Mode: core.ModeWebCloud}, fakeProcessor{})
+	for _, payload := range []string{
+		`{"url":"https://youtu.be/abc","quality":"vbr0"}`,
+		`{"url":"https://youtu.be/abc","quality":"vbr0","organizePlaylist":false,"playlistStart":9,"playlistEnd":2}`,
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/downloads", bytes.NewBufferString(payload)))
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("invalid request returned %d: %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestProgressStreamClosesAtTerminalState(t *testing.T) {
+	h := NewHandler(Config{Mode: core.ModeWebCloud}, fakeProcessor{})
+	id := createTestJob(t, h)
+	_ = waitForState(t, h, id, core.StateCompleted)
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/downloads/"+id+"/events", nil))
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("event stream did not close after terminal state")
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte(`"state":"COMPLETED"`)) {
+		t.Fatalf("terminal event missing: %s", w.Body.String())
+	}
+}
+
+func TestRateLimitKeyStoreIsBounded(t *testing.T) {
+	h := NewHandler(Config{Mode: core.ModeWebCloud, RateLimit: 10, GlobalRateLimit: 100, MaxRateKeys: 3, RateWindow: time.Minute}, fakeProcessor{})
+	for i, remote := range []string{"192.0.2.1:1000", "192.0.2.2:1000", "192.0.2.3:1000"} {
+		r := httptest.NewRequest(http.MethodGet, "/health", nil)
+		r.RemoteAddr = remote
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if i < 2 && w.Code != http.StatusOK {
+			t.Fatalf("request %d returned %d", i, w.Code)
+		}
+		if i == 2 && w.Code != http.StatusTooManyRequests {
+			t.Fatalf("new key beyond capacity returned %d", w.Code)
+		}
+	}
+	if len(h.visits) > h.config.MaxRateKeys {
+		t.Fatalf("tracked keys grew to %d", len(h.visits))
+	}
+}
+
+func TestLocalTerminalJobsReleaseCapacity(t *testing.T) {
+	h := NewHandler(Config{Mode: core.ModeDesktopLocal, EngineToken: "expected", MaxJobs: 1}, fakeProcessor{})
+	request := func() *httptest.ResponseRecorder {
+		body := bytes.NewBufferString(`{"url":"https://youtu.be/abc","quality":"vbr0","organizePlaylist":false}`)
+		r := httptest.NewRequest(http.MethodPost, "/downloads", body)
+		r.Header.Set("X-MP3-Engine-Token", "expected")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	first := request()
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("first request returned %d", first.Code)
+	}
+	var job Job
+	if err := json.Unmarshal(first.Body.Bytes(), &job); err != nil {
+		t.Fatal(err)
+	}
+	_ = waitForState(t, h, job.ID, core.StateCompleted)
+	if second := request(); second.Code != http.StatusAccepted {
+		t.Fatalf("terminal job did not release capacity: %d %s", second.Code, second.Body.String())
+	}
+}
+
+func TestCloudEvictionRemovesResultDirectory(t *testing.T) {
+	dir := t.TempDir()
+	resultDir := filepath.Join(dir, "job-output")
+	if err := os.MkdirAll(resultDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(resultDir, "track.mp3")
+	if err := os.WriteFile(path, []byte("mp3"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(Config{Mode: core.ModeWebCloud, MaxJobs: 1}, fileProcessor{path: path})
+	firstID := createTestJob(t, h)
+	_ = waitForState(t, h, firstID, core.StateCompleted)
+	second := httptest.NewRecorder()
+	h.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/downloads", bytes.NewBufferString(`{"url":"https://youtu.be/second","quality":"vbr0","organizePlaylist":false}`)))
+	if second.Code != http.StatusAccepted {
+		t.Fatalf("second request returned %d: %s", second.Code, second.Body.String())
+	}
+	if _, err := os.Stat(resultDir); !os.IsNotExist(err) {
+		t.Fatalf("evicted cloud result directory remains: %v", err)
+	}
+}
+
+func TestShutdownDrainsBackgroundJobs(t *testing.T) {
+	processor := gatedProcessor{started: make(chan struct{}), release: make(chan struct{})}
+	h := NewHandler(Config{Mode: core.ModeWebCloud, JobTimeout: time.Minute}, processor)
+	_ = createTestJob(t, h)
+	select {
+	case <-processor.started:
+	case <-time.After(time.Second):
+		t.Fatal("job did not start")
+	}
+	done := make(chan error, 1)
+	go func() { done <- h.Shutdown(t.Context()) }()
+	select {
+	case err := <-done:
+		t.Fatalf("shutdown returned before job completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(processor.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not finish after job completed")
 	}
 }
 

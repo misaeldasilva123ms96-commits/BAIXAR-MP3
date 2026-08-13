@@ -9,7 +9,7 @@ export class ProviderError extends Error {
 export class HttpDownloadProvider implements DownloadProvider {
   constructor(readonly mode: ProcessingMode, readonly baseUrl: string, private readonly token = '') {}
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async fetchResponse(path: string, init: RequestInit = {}): Promise<Response> {
     const headers: Record<string, string> = { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}) };
     if (this.mode === 'LOCAL_ENGINE' || this.mode === 'DESKTOP_LOCAL') {
       if (this.token) headers['X-MP3-Engine-Token'] = this.token;
@@ -21,6 +21,11 @@ export class HttpDownloadProvider implements DownloadProvider {
       try { const body = await response.json() as { error?: { message?: string; code?: string } }; message = body.error?.message || message; code = body.error?.code || code; } catch { /* response was not JSON */ }
       throw new ProviderError(message, code, response.status);
     }
+    return response;
+  }
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await this.fetchResponse(path, init);
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
   }
@@ -31,7 +36,20 @@ export class HttpDownloadProvider implements DownloadProvider {
   getProgress(id: string) { return this.request<DownloadJob>(`/downloads/${encodeURIComponent(id)}`); }
   cancel(id: string) { return this.request<void>(`/downloads/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
   eventsUrl(id: string) { return `${this.baseUrl}/downloads/${encodeURIComponent(id)}/events`; }
-  fileUrl(id: string) { return `${this.baseUrl}/downloads/${encodeURIComponent(id)}/file`; }
+  async downloadFile(id: string) {
+    const response = await this.fetchResponse(`/downloads/${encodeURIComponent(id)}/file`);
+    const blobUrl = URL.createObjectURL(await response.blob());
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const fileName = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `download-${id}.mp3`;
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(blobUrl);
+  }
   getSettings() { return this.request<Settings>('/settings'); }
   saveSettings(settings: Settings) { return this.request<Settings>('/settings', { method: 'PUT', body: JSON.stringify(settings) }); }
 }

@@ -61,12 +61,15 @@ func AddressIsPublic(ip netip.Addr) bool {
 		!ip.IsLinkLocalMulticast() && !ip.IsMulticast() && !ip.IsUnspecified()
 }
 
-func validateRequest(request DownloadRequest) error {
+func ValidateDownloadRequest(request DownloadRequest) error {
 	if _, err := ValidateMediaURL(request.URL); err != nil {
 		return err
 	}
 	if _, ok := QualityArguments()[request.Quality]; !ok {
 		return errors.New("qualidade inválida")
+	}
+	if request.OrganizePlaylist == nil {
+		return errors.New("organizePlaylist é obrigatório")
 	}
 	if request.PlaylistStart < 0 || request.PlaylistEnd < 0 {
 		return errors.New("intervalo inválido")

@@ -33,6 +33,8 @@ func (s *FileSettingsStore) Save(value core.Settings) error {
 	if err := value.Validate(); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
@@ -48,8 +50,6 @@ func (s *FileSettingsStore) Save(value core.Settings) error {
 		_ = os.Remove(temp)
 		return err
 	}
-	s.mu.Lock()
 	s.value = value
-	s.mu.Unlock()
 	return nil
 }

@@ -71,7 +71,7 @@ func main() {
 			}
 		}()
 	}
-	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 32 * 1024}
+	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 32 * 1024}
 	log.Fatal(server.ListenAndServe())
 }
 

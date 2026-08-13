@@ -61,7 +61,7 @@ type DownloadRequest struct {
 	Quality          Quality `json:"quality"`
 	PlaylistStart    int     `json:"playlistStart,omitempty"`
 	PlaylistEnd      int     `json:"playlistEnd,omitempty"`
-	OrganizePlaylist bool    `json:"organizePlaylist"`
+	OrganizePlaylist *bool   `json:"organizePlaylist"`
 	EmbedThumbnail   *bool   `json:"embedThumbnail,omitempty"`
 	EmbedMetadata    *bool   `json:"embedMetadata,omitempty"`
 }

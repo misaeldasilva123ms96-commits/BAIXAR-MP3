@@ -12,7 +12,7 @@ func QualityArguments() map[Quality]string {
 }
 
 func BuildYTDLPArguments(request DownloadRequest, tools ToolPaths, outputDir, tempDir, archivePath string) ([]string, error) {
-	if err := validateRequest(request); err != nil {
+	if err := ValidateDownloadRequest(request); err != nil {
 		return nil, err
 	}
 	if outputDir == "" || tempDir == "" {
@@ -20,7 +20,7 @@ func BuildYTDLPArguments(request DownloadRequest, tools ToolPaths, outputDir, te
 	}
 	quality := QualityArguments()[request.Quality]
 	template := "%(playlist_index&{} - |)s%(title)s.%(ext)s"
-	if request.OrganizePlaylist {
+	if *request.OrganizePlaylist {
 		template = "%(playlist_title&{}/|)s%(playlist_index&{} - |)s%(title)s.%(ext)s"
 	}
 	args := []string{

@@ -8,7 +8,7 @@ Se aparecer “backend ainda não configurado” ou erro de indisponibilidade, o
 
 ## Usar no Windows
 
-Extraia o pacote e abra `ABRIR_MP3_DOWNLOADER.bat`. Não execute dentro do ZIP. O Engine abre o navegador local e salva inicialmente em `Downloads\Musicas_MP3`. Altere a pasta na tela **Configurações**; o Engine valida e persiste o caminho absoluto.
+Extraia o pacote e abra `ABRIR_MP3_DOWNLOADER.bat`. Não execute dentro do ZIP. O Engine abre o navegador local e salva inicialmente em `%USERPROFILE%\Downloads\Musicas_MP3`. Altere a pasta na tela **Configurações**; o Engine valida e persiste o caminho absoluto.
 
 O terminal mostra o código local. Para usar o site hospedado com o Engine, copie esse código em **Configurações** no site. Não compartilhe o código com outros sites ou pessoas.
 

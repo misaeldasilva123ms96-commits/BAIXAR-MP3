@@ -17,6 +17,18 @@ describe('HttpDownloadProvider', () => {
     await provider.download({ url: 'https://youtu.be/abc', quality: 'vbr0', organizePlaylist: true });
     expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:38765/downloads', expect.objectContaining({ headers: expect.objectContaining({ 'X-MP3-Engine-Token': 'secret' }) }));
   });
+
+  it('downloads local files through the authenticated fetch flow', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['mp3']), { status: 200, headers: { 'Content-Disposition': 'attachment; filename="track.mp3"' } }));
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:test') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const provider = new HttpDownloadProvider('LOCAL_ENGINE', 'http://127.0.0.1:38765', 'secret');
+    await provider.downloadFile('job_1');
+    expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:38765/downloads/job_1/file', expect.objectContaining({ headers: expect.objectContaining({ 'X-MP3-Engine-Token': 'secret' }) }));
+    expect(click).toHaveBeenCalledOnce();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test');
+  });
 });
 
 describe('detectLocalEngine', () => {

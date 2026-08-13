@@ -33,7 +33,7 @@ export interface DownloadProvider {
   getProgress(id: string): Promise<DownloadJob>;
   cancel(id: string): Promise<void>;
   eventsUrl(id: string): string;
-  fileUrl(id: string): string;
+  downloadFile(id: string): Promise<void>;
   getSettings(): Promise<Settings>;
   saveSettings(settings: Settings): Promise<Settings>;
 }

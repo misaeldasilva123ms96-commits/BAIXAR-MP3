@@ -11,7 +11,7 @@
 
 ## Contrato do provider
 
-`DownloadProvider` expõe `health`, `analyze`, `download`, `getProgress`, `cancel`, `eventsUrl` e `fileUrl`. `HttpDownloadProvider` recebe modo, URL base e opcionalmente token. A UI não recebe nem produz argumentos de linha de comando.
+`DownloadProvider` expõe `health`, `analyze`, `download`, `getProgress`, `cancel`, `eventsUrl`, `downloadFile`, `getSettings` e `saveSettings`. `HttpDownloadProvider` recebe modo, URL base e opcionalmente token. A UI não recebe nem produz argumentos de linha de comando.
 
 Os modos são `WEB_CLOUD`, `LOCAL_ENGINE` e `DESKTOP_LOCAL`. A escolha fica visível. Detecção local só é positiva após `/health` retornar status, modo, versão e `ready=true`.
 
@@ -27,6 +27,8 @@ Os modos são `WEB_CLOUD`, `LOCAL_ENGINE` e `DESKTOP_LOCAL`. A escolha fica vis�
 | DELETE | `/downloads/:id` | cancela o contexto/processo |
 | GET | `/downloads/:id/events` | SSE até estado terminal |
 | GET | `/downloads/:id/file` | entrega resultado cloud dentro do TTL |
+| GET | `/settings` | lê configurações locais |
+| PUT | `/settings` | salva configurações locais |
 
 Playlists cloud com mais de um resultado são empacotadas em ZIP. Um vídeo resulta em MP3. O servidor nunca mantém uma biblioteca permanente.
 

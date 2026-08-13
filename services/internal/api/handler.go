@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -38,6 +39,7 @@ type Config struct {
 	RateWindow      time.Duration
 	MaxConcurrent   int
 	MaxJobs         int
+	MaxRateKeys     int
 	JobTimeout      time.Duration
 	FileTTL         time.Duration
 	Ready           bool
@@ -68,9 +70,10 @@ type Handler struct {
 	limitMu   sync.Mutex
 	visits    map[string][]time.Time
 	semaphore chan struct{}
+	jobsWG    sync.WaitGroup
 }
 
-func NewHandler(config Config, processor Processor) http.Handler {
+func NewHandler(config Config, processor Processor) *Handler {
 	if config.Version == "" {
 		config.Version = "3.0.0"
 	}
@@ -88,6 +91,9 @@ func NewHandler(config Config, processor Processor) http.Handler {
 	}
 	if config.MaxJobs <= 0 {
 		config.MaxJobs = 1000
+	}
+	if config.MaxRateKeys <= 0 {
+		config.MaxRateKeys = 10000
 	}
 	if config.JobTimeout <= 0 {
 		config.JobTimeout = 30 * time.Minute
@@ -136,8 +142,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	unsafeMethod := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
-	if (h.config.Mode == core.ModeLocalEngine || h.config.Mode == core.ModeDesktopLocal) && unsafeMethod {
-		if h.config.EngineToken == "" || r.Header.Get("X-MP3-Engine-Token") != h.config.EngineToken {
+	localSensitiveRead := r.Method == http.MethodGet && (r.URL.Path == "/settings" || strings.HasSuffix(r.URL.Path, "/file"))
+	if (h.config.Mode == core.ModeLocalEngine || h.config.Mode == core.ModeDesktopLocal) && (unsafeMethod || localSensitiveRead) {
+		supplied := r.Header.Get("X-MP3-Engine-Token")
+		validToken := h.config.EngineToken != "" && len(supplied) == len(h.config.EngineToken) && subtle.ConstantTimeCompare([]byte(supplied), []byte(h.config.EngineToken)) == 1
+		if !validToken {
 			writeError(w, http.StatusUnauthorized, "ENGINE_AUTH_REQUIRED", "Código de conexão local inválido.")
 			return
 		}
@@ -205,12 +214,8 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &request); err != nil {
 		return
 	}
-	if _, err := core.ValidateMediaURL(request.URL); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_URL", err.Error())
-		return
-	}
-	if _, ok := core.QualityArguments()[request.Quality]; !ok {
-		writeError(w, http.StatusBadRequest, "INVALID_QUALITY", "Qualidade inválida.")
+	if err := core.ValidateDownloadRequest(request); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
 	id, err := newID()
@@ -223,15 +228,42 @@ func (h *Handler) createDownload(w http.ResponseWriter, r *http.Request) {
 	job := &Job{ID: id, Mode: h.config.Mode, State: core.StateQueued, Request: request, Progress: core.ProgressEvent{JobID: id, State: core.StateQueued, UpdatedAt: now}, CreatedAt: now, UpdatedAt: now, cancel: cancel}
 	h.mu.Lock()
 	if len(h.jobs) >= h.config.MaxJobs {
-		h.mu.Unlock()
-		cancel()
-		writeError(w, http.StatusServiceUnavailable, "JOB_CAPACITY_REACHED", "A fila está temporariamente cheia.")
-		return
+		if !h.evictOldestTerminalLocked() {
+			h.mu.Unlock()
+			cancel()
+			writeError(w, http.StatusServiceUnavailable, "JOB_CAPACITY_REACHED", "A fila está temporariamente cheia.")
+			return
+		}
 	}
 	h.jobs[id] = job
 	h.mu.Unlock()
 	writeJSON(w, http.StatusAccepted, job)
-	go h.run(ctx, job)
+	h.jobsWG.Add(1)
+	go func() {
+		defer h.jobsWG.Done()
+		h.run(ctx, job)
+	}()
+}
+
+func (h *Handler) Shutdown(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		h.jobsWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		h.mu.RLock()
+		for _, job := range h.jobs {
+			if !terminal(job.State) && job.cancel != nil {
+				job.cancel()
+			}
+		}
+		h.mu.RUnlock()
+		return ctx.Err()
+	}
 }
 
 func (h *Handler) run(ctx context.Context, job *Job) {
@@ -399,25 +431,50 @@ func (h *Handler) allowRate(ip string) bool {
 	cutoff := now.Add(-h.config.RateWindow)
 	h.limitMu.Lock()
 	defer h.limitMu.Unlock()
-	allow := func(key string, limit int) bool {
-		entries := h.visits[key]
+	for key, entries := range h.visits {
 		kept := entries[:0]
 		for _, entry := range entries {
 			if entry.After(cutoff) {
 				kept = append(kept, entry)
 			}
 		}
-		if len(kept) >= limit {
+		if len(kept) == 0 {
+			delete(h.visits, key)
+		} else {
 			h.visits[key] = kept
+		}
+	}
+	allow := func(key string, limit int) bool {
+		entries := h.visits[key]
+		if len(entries) >= limit {
 			return false
 		}
-		h.visits[key] = append(kept, now)
+		if _, exists := h.visits[key]; !exists && len(h.visits) >= h.config.MaxRateKeys {
+			return false
+		}
+		h.visits[key] = append(entries, now)
 		return true
 	}
 	if !allow("global", h.config.GlobalRateLimit) {
 		return false
 	}
 	return allow("ip:"+ip, h.config.RateLimit)
+}
+func (h *Handler) evictOldestTerminalLocked() bool {
+	var oldest *Job
+	for _, job := range h.jobs {
+		if terminal(job.State) && (oldest == nil || job.UpdatedAt.Before(oldest.UpdatedAt)) {
+			oldest = job
+		}
+	}
+	if oldest == nil {
+		return false
+	}
+	if oldest.Result != nil && oldest.Result.FilePath != "" {
+		_ = os.RemoveAll(filepath.Dir(oldest.Result.FilePath))
+	}
+	delete(h.jobs, oldest.ID)
+	return true
 }
 func (h *Handler) cleanupExpired() {
 	now := time.Now()

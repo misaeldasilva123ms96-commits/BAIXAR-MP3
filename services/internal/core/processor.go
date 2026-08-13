@@ -80,7 +80,7 @@ func (p *ExecProcessor) Analyze(ctx context.Context, rawURL string) (Analysis, e
 }
 
 func (p *ExecProcessor) Start(ctx context.Context, jobID string, request DownloadRequest, emit func(ProgressEvent)) (DownloadResult, error) {
-	if err := validateRequest(request); err != nil {
+	if err := ValidateDownloadRequest(request); err != nil {
 		return DownloadResult{}, err
 	}
 	if p.Tools.YTDLP == "" {
@@ -112,8 +112,13 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	if p.Cloud && p.MaxItems > 0 && request.PlaylistEnd == 0 {
 		args = append(args[:len(args)-1], "--playlist-end", strconv.Itoa(p.MaxItems), args[len(args)-1])
 	}
-	cmd := exec.CommandContext(ctx, p.Tools.YTDLP, args...)
+	cmd := exec.Command(p.Tools.YTDLP, args...) //nolint:noctx // cancellation must terminate the complete process tree below
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	processTree, err := prepareProcessTree(cmd)
+	if err != nil {
+		return DownloadResult{}, err
+	}
+	defer processTree.close()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return DownloadResult{}, err
@@ -125,26 +130,14 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	if err := cmd.Start(); err != nil {
 		return DownloadResult{}, err
 	}
-	monitorDone := make(chan struct{})
-	var outputLimitExceeded atomic.Bool
-	if p.Cloud && p.MaxOutputBytes > 0 {
-		go func() {
-			ticker := time.NewTicker(250 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-monitorDone:
-					return
-				case <-ticker.C:
-					if directorySize(outputDir) > p.MaxOutputBytes {
-						outputLimitExceeded.Store(true)
-						_ = cmd.Process.Kill()
-						return
-					}
-				}
-			}
-		}()
+	if err := processTree.attach(cmd.Process); err != nil {
+		_ = processTree.terminate(cmd.Process)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return DownloadResult{}, fmt.Errorf("não foi possível proteger a árvore do processo: %w", err)
 	}
+	var outputLimitExceeded atomic.Bool
+	var outputScanFailed atomic.Bool
 
 	var mu sync.Mutex
 	files := []string{}
@@ -204,10 +197,41 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	readers.Add(2)
 	go func() { defer readers.Done(); parse(stdout) }()
 	go func() { defer readers.Done(); parse(stderr) }()
-	err = cmd.Wait()
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+	var ticker *time.Ticker
+	var quotaTick <-chan time.Time
+	if p.Cloud && p.MaxOutputBytes > 0 {
+		ticker = time.NewTicker(250 * time.Millisecond)
+		quotaTick = ticker.C
+		defer ticker.Stop()
+	}
+	waiting := true
+	for waiting {
+		select {
+		case err = <-waitDone:
+			waiting = false
+		case <-ctx.Done():
+			_ = processTree.terminate(cmd.Process)
+			err = <-waitDone
+			waiting = false
+		case <-quotaTick:
+			size, sizeErr := directorySize(outputDir)
+			if sizeErr != nil || size > p.MaxOutputBytes {
+				outputScanFailed.Store(sizeErr != nil)
+				outputLimitExceeded.Store(sizeErr == nil)
+				_ = processTree.terminate(cmd.Process)
+				err = <-waitDone
+				waiting = false
+			}
+		}
+	}
 	readers.Wait()
-	close(monitorDone)
 	_ = os.RemoveAll(tempDir)
+	if outputScanFailed.Load() {
+		_ = os.RemoveAll(outputDir)
+		return DownloadResult{}, errors.New("não foi possível contabilizar o tamanho do resultado")
+	}
 	if outputLimitExceeded.Load() {
 		_ = os.RemoveAll(outputDir)
 		return DownloadResult{}, errors.New("o resultado excedeu o limite de tamanho")
@@ -224,23 +248,23 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	if len(completedFiles) == 0 {
 		return DownloadResult{}, errors.New("nenhum arquivo foi gerado")
 	}
-	if p.MaxOutputBytes > 0 {
-		var total int64
-		for _, path := range completedFiles {
-			if info, statErr := os.Stat(path); statErr == nil {
-				total += info.Size()
-			}
-		}
-		if total > p.MaxOutputBytes {
-			_ = os.RemoveAll(outputDir)
-			return DownloadResult{}, errors.New("o resultado excedeu o limite de tamanho")
-		}
-	}
 	resultPath := completedFiles[0]
 	if p.Cloud && len(completedFiles) > 1 {
 		resultPath = filepath.Join(outputDir, "playlist.zip")
 		if err := zipFiles(resultPath, completedFiles); err != nil {
+			_ = os.RemoveAll(outputDir)
 			return DownloadResult{}, err
+		}
+	}
+	if p.MaxOutputBytes > 0 {
+		total, sizeErr := directorySize(outputDir)
+		if sizeErr != nil {
+			_ = os.RemoveAll(outputDir)
+			return DownloadResult{}, fmt.Errorf("não foi possível contabilizar o tamanho do resultado: %w", sizeErr)
+		}
+		if total > p.MaxOutputBytes {
+			_ = os.RemoveAll(outputDir)
+			return DownloadResult{}, errors.New("o resultado excedeu o limite de tamanho")
 		}
 	}
 	info, err := os.Stat(resultPath)
@@ -275,18 +299,23 @@ func isWithin(path, root string) bool {
 	rel, err := filepath.Rel(r, p)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
-func directorySize(root string) int64 {
+func directorySize(root string) (int64, error) {
 	var total int64
-	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
 			return nil
 		}
-		if info, infoErr := entry.Info(); infoErr == nil {
-			total += info.Size()
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
 		}
+		total += info.Size()
 		return nil
 	})
-	return total
+	return total, err
 }
 func zipFiles(destination string, files []string) error {
 	out, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o640)

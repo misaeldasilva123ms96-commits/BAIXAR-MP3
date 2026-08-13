@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateMediaURL(t *testing.T) {
@@ -50,7 +51,11 @@ func TestDirectorySize(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "nested", "two"), make([]byte, 5), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := directorySize(dir); got != 12 {
+	got, err := directorySize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 12 {
 		t.Fatalf("directorySize = %d", got)
 	}
 }
@@ -63,8 +68,13 @@ func TestOutputLimitStopsRunningProcess(t *testing.T) {
 	}
 	source := filepath.Join(root, "writer.go")
 	program := `package main
-import ("os"; "path/filepath"; "time")
-func main() { f, err := os.Create(filepath.Join(os.Getenv("MP3_TEST_OUTPUT"), "oversized.mp3")); if err != nil { panic(err) }; defer f.Close(); chunk := make([]byte, 32768); for i := 0; i < 64; i++ { if _, err = f.Write(chunk); err != nil { return }; _ = f.Sync(); time.Sleep(25*time.Millisecond) } }
+import ("os"; "os/exec"; "path/filepath"; "time")
+func main() {
+ if os.Getenv("MP3_HELPER_CHILD") != "1" { child := exec.Command(os.Args[0]); child.Env = append(os.Environ(), "MP3_HELPER_CHILD=1"); if err := child.Start(); err != nil { panic(err) }; _ = child.Wait(); return }
+ output, err := os.Create(filepath.Join(os.Getenv("MP3_TEST_OUTPUT"), "oversized.mp3")); if err != nil { panic(err) }; defer output.Close()
+ heartbeat, err := os.OpenFile(os.Getenv("MP3_TEST_HEARTBEAT"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600); if err != nil { panic(err) }; defer heartbeat.Close()
+ chunk := make([]byte, 32768); for { if _, err = output.Write(chunk); err != nil { return }; _, _ = heartbeat.Write([]byte("alive\n")); _ = output.Sync(); _ = heartbeat.Sync(); time.Sleep(25*time.Millisecond) }
+}
 `
 	if err := os.WriteFile(source, []byte(program), 0o600); err != nil {
 		t.Fatal(err)
@@ -74,13 +84,59 @@ func main() { f, err := os.Create(filepath.Join(os.Getenv("MP3_TEST_OUTPUT"), "o
 		t.Fatalf("build helper: %v: %s", err, output)
 	}
 	t.Setenv("MP3_TEST_OUTPUT", output)
+	heartbeat := filepath.Join(root, "heartbeat.log")
+	t.Setenv("MP3_TEST_HEARTBEAT", heartbeat)
 	p := &ExecProcessor{Tools: ToolPaths{YTDLP: wrapper}, OutputRoot: root, TempRoot: filepath.Join(root, "temp"), Cloud: true, MaxItems: 1, MaxOutputBytes: 64 * 1024}
-	_, err := p.Start(context.Background(), "output", DownloadRequest{URL: "https://youtu.be/limit", Quality: QualityVBR0}, func(ProgressEvent) {})
-	if err == nil || !strings.Contains(err.Error(), "excedeu") {
-		t.Fatalf("expected enforced output limit, got %v", err)
+	organize := false
+	_, startErr := p.Start(context.Background(), "output", DownloadRequest{URL: "https://youtu.be/limit", Quality: QualityVBR0, OrganizePlaylist: &organize}, func(ProgressEvent) {})
+	if startErr == nil || !strings.Contains(startErr.Error(), "excedeu") {
+		t.Fatalf("expected enforced output limit, got %v", startErr)
 	}
-	if got := directorySize(output); got != 0 {
+	got, sizeErr := directorySize(output)
+	if sizeErr != nil && !os.IsNotExist(sizeErr) {
+		t.Fatal(sizeErr)
+	}
+	if got != 0 {
 		t.Fatalf("partial output retained: %d bytes", got)
+	}
+	before, statErr := os.Stat(heartbeat)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	time.Sleep(250 * time.Millisecond)
+	after, statErr := os.Stat(heartbeat)
+	if statErr != nil {
+		t.Fatal(statErr)
+	}
+	if after.Size() != before.Size() {
+		t.Fatalf("child process continued writing after cancellation: %d -> %d", before.Size(), after.Size())
+	}
+}
+
+func TestOutputLimitIncludesGeneratedPlaylistArchive(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "playlist.go")
+	program := `package main
+import ("crypto/rand"; "fmt"; "os"; "path/filepath")
+func main() { for _, name := range []string{"one.mp3", "two.mp3"} { path := filepath.Join(os.Getenv("MP3_TEST_OUTPUT"), name); data := make([]byte, 40*1024); if _, err := rand.Read(data); err != nil { panic(err) }; if err := os.WriteFile(path, data, 0600); err != nil { panic(err) }; fmt.Println("MP3_RESULT|"+path) } }
+`
+	if err := os.WriteFile(source, []byte(program), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(root, "playlist.exe")
+	if output, err := exec.CommandContext(t.Context(), "go", "build", "-o", wrapper, source).CombinedOutput(); err != nil {
+		t.Fatalf("build helper: %v: %s", err, output)
+	}
+	outputDir := filepath.Join(root, "job")
+	t.Setenv("MP3_TEST_OUTPUT", outputDir)
+	organize := false
+	p := &ExecProcessor{Tools: ToolPaths{YTDLP: wrapper}, OutputRoot: root, TempRoot: filepath.Join(root, "temp"), Cloud: true, MaxItems: 2, MaxOutputBytes: 100 * 1024}
+	_, err := p.Start(context.Background(), "job", DownloadRequest{URL: "https://youtu.be/playlist", Quality: QualityVBR0, OrganizePlaylist: &organize}, func(ProgressEvent) {})
+	if err == nil || !strings.Contains(err.Error(), "excedeu") {
+		t.Fatalf("final archive was not included in quota: %v", err)
+	}
+	if _, statErr := os.Stat(outputDir); !os.IsNotExist(statErr) {
+		t.Fatalf("oversized output retained: %v", statErr)
 	}
 }
 
@@ -97,7 +153,8 @@ func TestAddressIsPublic(t *testing.T) {
 }
 
 func TestBuildYTDLPArguments(t *testing.T) {
-	request := DownloadRequest{URL: "https://youtu.be/abc", Quality: QualityVBR0, PlaylistStart: 2, PlaylistEnd: 5, OrganizePlaylist: true}
+	organize := true
+	request := DownloadRequest{URL: "https://youtu.be/abc", Quality: QualityVBR0, PlaylistStart: 2, PlaylistEnd: 5, OrganizePlaylist: &organize}
 	args, err := BuildYTDLPArguments(request, ToolPaths{FFmpegDir: `C:\\tools`, Deno: `C:\\tools\\deno.exe`}, `C:\\out`, `C:\\tmp`, `C:\\history.txt`)
 	if err != nil {
 		t.Fatal(err)
@@ -120,10 +177,12 @@ func TestBuildYTDLPArguments(t *testing.T) {
 }
 
 func TestRejectInvalidQualityAndPlaylistRange(t *testing.T) {
+	organize := false
 	bad := []DownloadRequest{
-		{URL: "https://youtu.be/a", Quality: "lossless"},
-		{URL: "https://youtu.be/a", Quality: Quality192, PlaylistStart: 9, PlaylistEnd: 2},
-		{URL: "https://youtu.be/a", Quality: Quality192, PlaylistEnd: 501},
+		{URL: "https://youtu.be/a", Quality: "lossless", OrganizePlaylist: &organize},
+		{URL: "https://youtu.be/a", Quality: Quality192, PlaylistStart: 9, PlaylistEnd: 2, OrganizePlaylist: &organize},
+		{URL: "https://youtu.be/a", Quality: Quality192, PlaylistEnd: 501, OrganizePlaylist: &organize},
+		{URL: "https://youtu.be/a", Quality: Quality192},
 	}
 	for _, request := range bad {
 		if _, err := BuildYTDLPArguments(request, ToolPaths{}, t.TempDir(), t.TempDir(), ""); err == nil {

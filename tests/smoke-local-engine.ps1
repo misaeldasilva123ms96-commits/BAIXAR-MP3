@@ -7,18 +7,28 @@ if (-not $resolvedSmoke.StartsWith($resolvedTemp, [StringComparison]::OrdinalIgn
 
 New-Item -ItemType Directory -Path (Join-Path $smokeRoot 'web') | Out-Null
 Copy-Item -Path (Join-Path $projectRoot 'apps/web/dist/*') -Destination (Join-Path $smokeRoot 'web') -Recurse
-go build -trimpath -buildvcs=false -ldflags '-s -w -buildid=' -o (Join-Path $smokeRoot 'MP3_Downloader.exe') ./services/cmd/local-engine
-if ($LASTEXITCODE) { throw 'Falha ao compilar Engine.' }
+Push-Location $projectRoot
+try {
+    go build -trimpath -buildvcs=false -ldflags '-s -w -buildid=' -o (Join-Path $smokeRoot 'MP3_Downloader.exe') ./services/cmd/local-engine
+    if ($LASTEXITCODE) { throw 'Falha ao compilar Engine.' }
+}
+finally { Pop-Location }
 
+$environmentNames = @('MP3_ENGINE_TOKEN', 'MP3_NO_BROWSER', 'MP3_DOWNLOAD_DIR')
+$previousEnvironment = @{}
+foreach ($name in $environmentNames) {
+    $current = Get-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+    $previousEnvironment[$name] = @{ Exists = $null -ne $current; Value = if ($current) { $current.Value } else { $null } }
+}
 $env:MP3_ENGINE_TOKEN = '0123456789abcdef0123456789abcdef0123456789abcdef'
 $env:MP3_NO_BROWSER = '1'
 $env:MP3_DOWNLOAD_DIR = Join-Path $smokeRoot 'downloads'
 $engineOut = Join-Path $smokeRoot 'engine.out.log'
 $engineError = Join-Path $smokeRoot 'engine.err.log'
-$engine = Start-Process -FilePath (Join-Path $smokeRoot 'MP3_Downloader.exe') -PassThru -WindowStyle Hidden -RedirectStandardOutput $engineOut -RedirectStandardError $engineError
-Remove-Item Env:MP3_ENGINE_TOKEN, Env:MP3_NO_BROWSER, Env:MP3_DOWNLOAD_DIR
+$engine = $null
 
 try {
+    $engine = Start-Process -FilePath (Join-Path $smokeRoot 'MP3_Downloader.exe') -PassThru -WindowStyle Hidden -RedirectStandardOutput $engineOut -RedirectStandardError $engineError
     $health = $null
     for ($attempt = 0; $attempt -lt 20 -and -not $health; $attempt++) {
         Start-Sleep -Milliseconds 250
@@ -40,6 +50,10 @@ try {
     [pscustomobject]@{ Health = $health.status; Ready = $health.ready; Mode = $health.mode; Index = $index.StatusCode; SavedQuality = $saved.defaultQuality; Bind = $listener.LocalAddress }
 }
 finally {
-    if (-not $engine.HasExited) { Stop-Process -Id $engine.Id -Force; $engine.WaitForExit() }
+    if ($engine -and -not $engine.HasExited) { Stop-Process -Id $engine.Id -Force; $engine.WaitForExit() }
+    foreach ($name in $environmentNames) {
+        if ($previousEnvironment[$name].Exists) { Set-Item -LiteralPath "Env:$name" -Value $previousEnvironment[$name].Value }
+        else { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+    }
     if (Test-Path -LiteralPath $resolvedSmoke) { [IO.Directory]::Delete($resolvedSmoke, $true) }
 }

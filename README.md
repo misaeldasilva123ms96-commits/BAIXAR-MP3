@@ -67,7 +67,7 @@ Limites configuráveis por ambiente incluem concorrência, requisições por min
 | `MP3_RATE_LIMIT` | `30` | requisições por IP e minuto |
 | `MP3_GLOBAL_RATE_LIMIT` | `300` | requisições globais por minuto e instância |
 | `MP3_MAX_OUTPUT_MB` | `500` | teto do resultado temporário por job |
-| `MP3_DOWNLOAD_DIR` | Downloads do usuário | pasta do modo Windows |
+| `MP3_DOWNLOAD_DIR` | `%USERPROFILE%\Downloads\Musicas_MP3` | pasta do modo Windows |
 
 ## Arquitetura
 

@@ -1,6 +1,7 @@
 package runtimeconfig
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/misaeldasilva123ms96-commits/baixar-mp3/services/internal/core"
 )
+
+var toolVersionTimeout = 10 * time.Second
 
 func Env(key, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
@@ -76,7 +79,11 @@ func toolVersion(path, arg string) string {
 	if path == "" {
 		return "indisponível"
 	}
-	output, err := exec.Command(path, arg).CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), toolVersionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, arg)
+	cmd.Stdin = nil
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "indisponível"
 	}

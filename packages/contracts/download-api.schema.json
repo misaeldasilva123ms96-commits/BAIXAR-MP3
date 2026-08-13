@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://misaeldasilva123ms96-commits.github.io/BAIXAR-MP3/contracts/download-api.schema.json",
   "title": "MP3 Downloader API v1",
-  "type": "object",
+  "$ref": "#/$defs/downloadRequest",
   "$defs": {
     "mode": { "enum": ["WEB_CLOUD", "LOCAL_ENGINE", "DESKTOP_LOCAL"] },
     "quality": { "enum": ["vbr0", "320", "256", "192", "128"] },
