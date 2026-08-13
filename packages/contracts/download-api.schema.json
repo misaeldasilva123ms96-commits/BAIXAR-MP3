@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://misaeldasilva123ms96-commits.github.io/BAIXAR-MP3/contracts/download-api.schema.json",
+  "title": "MP3 Downloader API v1",
+  "$ref": "#/$defs/downloadRequest",
+  "$defs": {
+    "mode": { "enum": ["WEB_CLOUD", "LOCAL_ENGINE", "DESKTOP_LOCAL"] },
+    "quality": { "enum": ["vbr0", "320", "256", "192", "128"] },
+    "state": { "enum": ["ANALYZING", "QUEUED", "DOWNLOADING", "CONVERTING", "ADDING_METADATA", "FINALIZING", "COMPLETED", "FAILED", "CANCELLED", "SKIPPED"] },
+    "downloadRequest": {
+      "type": "object",
+      "required": ["url", "quality", "organizePlaylist"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "format": "uri", "maxLength": 2048 },
+        "quality": { "$ref": "#/$defs/quality" },
+        "playlistStart": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "playlistEnd": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "organizePlaylist": { "type": "boolean" },
+        "embedThumbnail": { "type": "boolean" },
+        "embedMetadata": { "type": "boolean" }
+      }
+    }
+  }
+}

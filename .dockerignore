@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+apps/web/node_modules
+apps/web/dist
+ferramentas
+dados
+logs
+temporarios
+*.exe
+*.mp3
+*.zip

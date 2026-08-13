@@ -1,0 +1,14 @@
+{
+  "name": "baixar-mp3-v3",
+  "version": "3.0.0",
+  "private": true,
+  "workspaces": ["apps/web"],
+  "devDependencies": { "jsdom": "29.0.1" },
+  "scripts": {
+    "build": "npm run build --workspace apps/web",
+    "test": "npm run test --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/web",
+    "lint": "npm run lint --workspace apps/web"
+  },
+  "engines": { "node": ">=22" }
+}

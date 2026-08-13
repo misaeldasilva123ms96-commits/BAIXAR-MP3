@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.15.0
+          cache: npm
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.26.5
+          cache: true
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+      - name: Lint and type check
+        run: |
+          npm run lint
+          npm run typecheck
+      - name: Frontend tests and build
+        run: |
+          npm test
+          npm run build
+      - name: Core, API and security tests
+        run: go test -race ./services/...
+      - name: Vet backend and engine
+        run: go vet ./services/...
+      - name: Protect legacy behavior
+        shell: pwsh
+        run: ./tests/legacy-contract.ps1
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  windows-package-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.15.0
+          cache: npm
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.26.5
+          cache: true
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Build Windows engine
+        shell: pwsh
+        run: go build -trimpath -buildvcs=false -ldflags '-s -w -buildid=' -o MP3_Downloader.exe ./services/cmd/local-engine
+      - name: Validate PowerShell and package scope
+        shell: pwsh
+        run: |
+          ./tests/legacy-contract.ps1
+          if (-not (Test-Path MP3_Downloader.exe)) { throw 'Engine ausente.' }
+          if (-not (Test-Path apps/web/dist/index.html)) { throw 'Frontend ausente.' }
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { persist-credentials: false }
+      - name: Build portable cloud API image
+        run: docker build -t baixar-mp3-api:ci .

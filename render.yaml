@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: baixar-mp3-api
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: MP3_ALLOWED_ORIGINS
+        value: https://misaeldasilva123ms96-commits.github.io
+      - key: MP3_MAX_CONCURRENT
+        value: "2"
+      - key: MP3_MAX_JOBS
+        value: "1000"
+      - key: MP3_MAX_PLAYLIST_ITEMS
+        value: "100"
+      - key: MP3_FILE_TTL
+        value: 30m
+      - key: MP3_JOB_TIMEOUT
+        value: 30m
