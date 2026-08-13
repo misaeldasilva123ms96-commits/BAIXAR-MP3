@@ -18,8 +18,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      VITE_MP3_API_BASE_URL: ${{ vars.MP3_API_BASE_URL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: { persist-credentials: false }
@@ -30,11 +28,16 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run lint
       - run: npm test
-      - run: npm run build
       - name: Require the production backend before deployment
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: bash
+        env:
+          VITE_MP3_API_BASE_URL: ${{ vars.MP3_API_BASE_URL }}
         run: test -n "$VITE_MP3_API_BASE_URL"
+      - name: Build frontend
+        env:
+          VITE_MP3_API_BASE_URL: ${{ vars.MP3_API_BASE_URL }}
+        run: npm run build
       - name: Verify GitHub Pages base path
         shell: bash
         run: |
