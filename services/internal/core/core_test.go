@@ -176,6 +176,61 @@ func TestBuildYTDLPArguments(t *testing.T) {
 	}
 }
 
+func TestYouTubeExtractorFallbackOrder(t *testing.T) {
+	tests := []struct {
+		name  string
+		cloud bool
+		want  string
+	}{
+		{name: "offline prefers default", want: "youtube:player_client=default,web_embedded"},
+		{name: "cloud prefers embedded", cloud: true, want: "youtube:player_client=web_embedded,default"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := youtubeExtractorArguments(test.cloud)
+			if len(got) != 2 || got[0] != "--extractor-args" || got[1] != test.want {
+				t.Fatalf("youtubeExtractorArguments(%v) = %#v", test.cloud, got)
+			}
+		})
+	}
+}
+
+func TestAnalyzeUsesCloudYouTubeFallback(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "analyzer.go")
+	program := `package main
+import ("fmt"; "os"; "strings")
+func main() {
+ args := strings.Join(os.Args[1:], "\n")
+ if !strings.Contains(args, "--extractor-args\nyoutube:player_client=web_embedded,default") { fmt.Fprintln(os.Stderr, "cloud fallback missing"); os.Exit(1) }
+ fmt.Print("{\"id\":\"video-id\",\"title\":\"Video title\",\"webpage_url\":\"https://www.youtube.com/watch?v=video-id\"}")
+}
+`
+	if err := os.WriteFile(source, []byte(program), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(root, "analyzer.exe")
+	if output, err := exec.CommandContext(t.Context(), "go", "build", "-o", wrapper, source).CombinedOutput(); err != nil {
+		t.Fatalf("build helper: %v: %s", err, output)
+	}
+	processor := &ExecProcessor{Tools: ToolPaths{YTDLP: wrapper}, Cloud: true}
+	analysis, err := processor.Analyze(t.Context(), "https://youtu.be/video-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis.ID != "video-id" || analysis.Title != "Video title" {
+		t.Fatalf("unexpected analysis: %#v", analysis)
+	}
+}
+
+func TestYouTubeBotChallengeHasActionableError(t *testing.T) {
+	exitErr := &exec.ExitError{Stderr: []byte("ERROR: Sign in to confirm you’re not a bot")}
+	err := youtubeCommandError("não foi possível analisar o conteúdo", exitErr, false)
+	if !strings.Contains(err.Error(), "YouTube bloqueou") || !strings.Contains(err.Error(), "versão offline") {
+		t.Fatalf("unexpected challenge error: %v", err)
+	}
+}
+
 func TestRejectInvalidQualityAndPlaylistRange(t *testing.T) {
 	organize := false
 	bad := []DownloadRequest{
