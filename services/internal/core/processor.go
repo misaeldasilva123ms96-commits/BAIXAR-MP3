@@ -41,12 +41,14 @@ func (p *ExecProcessor) Analyze(ctx context.Context, rawURL string) (Analysis, e
 	if maxItems <= 0 {
 		maxItems = 100
 	}
-	args := []string{"--ignore-config", "--dump-single-json", "--skip-download", "--flat-playlist", "--playlist-end", strconv.Itoa(maxItems), rawURL}
+	args := []string{"--ignore-config", "--dump-single-json", "--skip-download", "--flat-playlist", "--playlist-end", strconv.Itoa(maxItems)}
+	args = append(args, youtubeExtractorArguments(p.Cloud)...)
+	args = append(args, rawURL)
 	cmd := exec.CommandContext(ctx, p.Tools.YTDLP, args...)
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	output, err := cmd.Output()
 	if err != nil {
-		return Analysis{}, fmt.Errorf("não foi possível analisar o conteúdo: %w", err)
+		return Analysis{}, youtubeCommandError("não foi possível analisar o conteúdo", err, false)
 	}
 	var payload struct {
 		Type       string  `json:"_type"`
@@ -112,6 +114,9 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	if p.Cloud && p.MaxItems > 0 && request.PlaylistEnd == 0 {
 		args = append(args[:len(args)-1], "--playlist-end", strconv.Itoa(p.MaxItems), args[len(args)-1])
 	}
+	target := args[len(args)-1]
+	args = append(args[:len(args)-1], youtubeExtractorArguments(p.Cloud)...)
+	args = append(args, target)
 	cmd := exec.Command(p.Tools.YTDLP, args...) //nolint:noctx // cancellation must terminate the complete process tree below
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	processTree, err := prepareProcessTree(cmd)
@@ -138,6 +143,7 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	}
 	var outputLimitExceeded atomic.Bool
 	var outputScanFailed atomic.Bool
+	var youtubeBotChallenge atomic.Bool
 
 	var mu sync.Mutex
 	files := []string{}
@@ -146,6 +152,9 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
+			if isYouTubeBotChallenge(line) {
+				youtubeBotChallenge.Store(true)
+			}
 			event := ProgressEvent{State: StateDownloading, UpdatedAt: time.Now().UTC()}
 			switch {
 			case strings.HasPrefix(line, "MP3_PROGRESS|"):
@@ -240,7 +249,7 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 		return DownloadResult{}, ctx.Err()
 	}
 	if err != nil {
-		return DownloadResult{}, fmt.Errorf("yt-dlp terminou com erro: %w", err)
+		return DownloadResult{}, youtubeCommandError("yt-dlp terminou com erro", err, youtubeBotChallenge.Load())
 	}
 	mu.Lock()
 	completedFiles := append([]string(nil), files...)
@@ -273,6 +282,32 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	}
 	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(resultPath)), ".")
 	return DownloadResult{Title: strings.TrimSuffix(filepath.Base(resultPath), filepath.Ext(resultPath)), Format: format, Quality: request.Quality, FileName: filepath.Base(resultPath), FilePath: resultPath, Size: info.Size(), Count: len(completedFiles)}, nil
+}
+
+func youtubeExtractorArguments(cloud bool) []string {
+	clients := "default,web_embedded"
+	if cloud {
+		clients = "web_embedded,default"
+	}
+	return []string{"--extractor-args", "youtube:player_client=" + clients}
+}
+
+func youtubeCommandError(prefix string, err error, botChallenge bool) error {
+	var exitErr *exec.ExitError
+	if !botChallenge && errors.As(err, &exitErr) {
+		botChallenge = isYouTubeBotChallenge(string(exitErr.Stderr))
+	}
+	if botChallenge {
+		return fmt.Errorf("%s: o YouTube bloqueou temporariamente a solicitação automatizada; tente novamente mais tarde ou use a versão offline", prefix)
+	}
+	return fmt.Errorf("%s: %w", prefix, err)
+}
+
+func isYouTubeBotChallenge(value string) bool {
+	normalized := strings.ToLower(value)
+	return strings.Contains(normalized, "sign in to confirm you’re not a bot") ||
+		strings.Contains(normalized, "sign in to confirm you're not a bot") ||
+		strings.Contains(normalized, "http error 429: too many requests")
 }
 
 func first(values ...string) string {
