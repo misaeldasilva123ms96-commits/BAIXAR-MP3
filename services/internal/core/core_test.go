@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -176,33 +177,27 @@ func TestBuildYTDLPArguments(t *testing.T) {
 	}
 }
 
-func TestYouTubeExtractorFallbackOrder(t *testing.T) {
-	tests := []struct {
-		name  string
-		cloud bool
-		want  string
-	}{
-		{name: "offline prefers default", want: "youtube:player_client=default,web_embedded"},
-		{name: "cloud prefers embedded", cloud: true, want: "youtube:player_client=web_embedded,default"},
+func TestYouTubeExtractorUsesDefaultUnlessOperatorConfiguredFallback(t *testing.T) {
+	if got := youtubeExtractorArguments(""); len(got) != 0 {
+		t.Fatalf("default yt-dlp behavior was overridden: %#v", got)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := youtubeExtractorArguments(test.cloud)
-			if len(got) != 2 || got[0] != "--extractor-args" || got[1] != test.want {
-				t.Fatalf("youtubeExtractorArguments(%v) = %#v", test.cloud, got)
-			}
-		})
+	got := youtubeExtractorArguments("default,web_embedded")
+	if len(got) != 2 || got[0] != "--extractor-args" || got[1] != "youtube:player_client=default,web_embedded" {
+		t.Fatalf("configured fallback = %#v", got)
+	}
+	if got := youtubeExtractorArguments("default;--exec=bad"); len(got) != 0 {
+		t.Fatalf("unsafe player client setting accepted: %#v", got)
 	}
 }
 
-func TestAnalyzeUsesCloudYouTubeFallback(t *testing.T) {
+func TestAnalyzeUsesDefaultYouTubeStrategy(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "analyzer.go")
 	program := `package main
 import ("fmt"; "os"; "strings")
 func main() {
  args := strings.Join(os.Args[1:], "\n")
- if !strings.Contains(args, "--extractor-args\nyoutube:player_client=web_embedded,default") { fmt.Fprintln(os.Stderr, "cloud fallback missing"); os.Exit(1) }
+ if strings.Contains(args, "--extractor-args") { fmt.Fprintln(os.Stderr, "unexpected forced player client"); os.Exit(1) }
  fmt.Print("{\"id\":\"video-id\",\"title\":\"Video title\",\"webpage_url\":\"https://www.youtube.com/watch?v=video-id\"}")
 }
 `
@@ -225,9 +220,55 @@ func main() {
 
 func TestYouTubeBotChallengeHasActionableError(t *testing.T) {
 	exitErr := &exec.ExitError{Stderr: []byte("ERROR: Sign in to confirm you’re not a bot")}
-	err := youtubeCommandError("não foi possível analisar o conteúdo", exitErr, false)
-	if !strings.Contains(err.Error(), "YouTube bloqueou") || !strings.Contains(err.Error(), "versão offline") {
+	err := classifyYTDLPError(exitErr, "")
+	if err.Code != CodeYouTubeBotChallenge || err.Retryable || !strings.Contains(err.Error(), "processamento local") {
 		t.Fatalf("unexpected challenge error: %v", err)
+	}
+}
+
+func TestYTDLPFailuresHaveStructuredCodes(t *testing.T) {
+	tests := []struct {
+		output    string
+		code      ErrorCode
+		retryable bool
+	}{
+		{"HTTP Error 429: Too Many Requests", CodeYouTubeRateLimited, true},
+		{"PO Token is required and missing", CodeYouTubePOToken, false},
+		{"This video is unavailable", CodeYouTubeUnavailable, false},
+		{"network operation timed out", CodeUpstreamTimeout, true},
+		{"unexpected extractor traceback", CodeExtractorFailed, false},
+	}
+	for _, test := range tests {
+		err := classifyYTDLPError(errors.New("exit status 1"), test.output)
+		if err.Code != test.code || err.Retryable != test.retryable {
+			t.Errorf("classifyYTDLPError(%q) = %s retryable=%v", test.output, err.Code, err.Retryable)
+		}
+	}
+}
+
+func TestAnalyzeRetriesOnlyTransientFailure(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "retry.go")
+	program := `package main
+import ("fmt"; "os")
+func main() { path := os.Getenv("MP3_RETRY_COUNTER"); if _, err := os.Stat(path); os.IsNotExist(err) { _ = os.WriteFile(path, []byte("1"), 0600); fmt.Fprintln(os.Stderr, "HTTP Error 429: Too Many Requests"); os.Exit(1) }; fmt.Print("{\"id\":\"ok\",\"title\":\"Recovered\"}") }
+`
+	if err := os.WriteFile(source, []byte(program), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(root, "retry.exe")
+	if output, err := exec.CommandContext(t.Context(), "go", "build", "-o", wrapper, source).CombinedOutput(); err != nil {
+		t.Fatalf("build helper: %v: %s", err, output)
+	}
+	t.Setenv("MP3_RETRY_COUNTER", filepath.Join(root, "counter"))
+	var sleeps int
+	processor := &ExecProcessor{Tools: ToolPaths{YTDLP: wrapper}, AnalysisRetries: 2, RetryBaseDelay: time.Millisecond, Sleep: func(context.Context, time.Duration) error { sleeps++; return nil }}
+	analysis, err := processor.Analyze(t.Context(), "https://youtu.be/retry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis.ID != "ok" || sleeps != 1 {
+		t.Fatalf("analysis=%#v sleeps=%d", analysis, sleeps)
 	}
 }
 

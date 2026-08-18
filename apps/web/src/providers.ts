@@ -1,6 +1,7 @@
 import type { Analysis, DownloadJob, DownloadProvider, DownloadRequest, EngineDetection, ProcessingMode, Settings, ToolStatus } from './contracts';
 
 const LOCAL_ENGINE_URL = 'http://127.0.0.1:38765';
+const LOCAL_ENGINE_FALLBACK_URL = 'http://localhost:38765';
 
 export class ProviderError extends Error {
   constructor(message: string, readonly code = 'REQUEST_FAILED', readonly status = 0) { super(message); }
@@ -54,17 +55,47 @@ export class HttpDownloadProvider implements DownloadProvider {
   saveSettings(settings: Settings) { return this.request<Settings>('/settings', { method: 'PUT', body: JSON.stringify(settings) }); }
 }
 
-export async function detectLocalEngine(timeoutMs = 1200): Promise<EngineDetection> {
+type DetectOptions = { timeoutMs?: number; attempts?: number; interactive?: boolean };
+
+async function fetchEngineHealth(baseUrl: string, timeoutMs: number): Promise<EngineDetection> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${LOCAL_ENGINE_URL}/health`, { signal: controller.signal, headers: { Accept: 'application/json' } });
-    if (!response.ok) return { available: false };
-    const body = await response.json() as { status?: string; mode?: string; version?: string; ready?: boolean };
-    if (body.status !== 'ok' || (body.mode !== 'LOCAL_ENGINE' && body.mode !== 'DESKTOP_LOCAL')) return { available: false };
-    return { available: body.ready === true, reachable: true, version: body.version, tools: (body as { tools?: ToolStatus }).tools };
-  } catch { return { available: false }; }
-  finally { window.clearTimeout(timeout); }
+    const response = await fetch(`${baseUrl}/health`, { signal: controller.signal, headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'omit' });
+    if (response.status === 401 || response.status === 403) return { state: 'AUTH_REQUIRED', available: false, reachable: true, baseUrl };
+    if (!response.ok) return { state: 'REACHABLE', available: false, reachable: true, baseUrl, reason: 'invalid_response' };
+    const body = await response.json() as { status?: string; mode?: string; version?: string; ready?: boolean; tools?: ToolStatus };
+    if (body.status !== 'ok' || (body.mode !== 'LOCAL_ENGINE' && body.mode !== 'DESKTOP_LOCAL')) return { state: 'REACHABLE', available: false, reachable: true, baseUrl, reason: 'invalid_response' };
+    return { state: body.ready === true ? 'READY' : 'TOOLS_NOT_READY', available: body.ready === true, reachable: true, baseUrl, version: body.version, tools: body.tools || {} };
+  } catch (error) {
+    return { state: 'NOT_DETECTED', available: false, reachable: false, baseUrl, reason: error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'network' };
+  } finally { window.clearTimeout(timeout); }
+}
+
+async function loopbackPermissionState(): Promise<PermissionState | undefined> {
+  if (!navigator.permissions?.query) return undefined;
+  for (const name of ['loopback-network', 'local-network-access']) {
+    try { return (await navigator.permissions.query({ name } as PermissionDescriptor)).state; } catch { /* try the compatibility alias */ }
+  }
+  return undefined;
+}
+
+export async function detectLocalEngine(options: number | DetectOptions = {}): Promise<EngineDetection> {
+  const settings = typeof options === 'number' ? { timeoutMs: options } : options;
+  const timeoutMs = settings.timeoutMs ?? 1200;
+  const attempts = Math.max(1, Math.min(settings.attempts ?? 1, 2));
+  let last: EngineDetection = { state: 'NOT_DETECTED', available: false, reachable: false, reason: 'network' };
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    for (const baseUrl of [LOCAL_ENGINE_URL, LOCAL_ENGINE_FALLBACK_URL]) {
+      const result = await fetchEngineHealth(baseUrl, timeoutMs);
+      if (result.reachable) return result;
+      last = result;
+    }
+    if (attempt + 1 < attempts) await new Promise((resolve) => window.setTimeout(resolve, 150));
+  }
+  const permission = await loopbackPermissionState();
+  if (settings.interactive && permission && permission !== 'granted') return { ...last, state: 'PERMISSION_REQUIRED', reason: 'permission' };
+  return last;
 }
 
 export function cloudProvider(): HttpDownloadProvider {
@@ -72,7 +103,7 @@ export function cloudProvider(): HttpDownloadProvider {
   return new HttpDownloadProvider('WEB_CLOUD', configured || '');
 }
 
-export function localProvider(token: string, desktop = false): HttpDownloadProvider {
-  const base = desktop ? '' : LOCAL_ENGINE_URL;
+export function localProvider(token: string, desktop = false, detectedBaseUrl = LOCAL_ENGINE_URL): HttpDownloadProvider {
+  const base = desktop ? '' : detectedBaseUrl;
   return new HttpDownloadProvider(desktop ? 'DESKTOP_LOCAL' : 'LOCAL_ENGINE', base, token);
 }

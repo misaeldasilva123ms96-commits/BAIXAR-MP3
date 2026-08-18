@@ -18,11 +18,12 @@ export interface ProgressEvent {
 export interface DownloadResult { title?: string; format: string; quality?: Quality; fileName?: string; size?: number; count?: number }
 export interface DownloadJob {
   id: string; mode: ProcessingMode; state: JobState; request: DownloadRequest; progress: ProgressEvent;
-  result?: DownloadResult; error?: string; createdAt: string; updatedAt: string; expiresAt?: string;
+  result?: DownloadResult; error?: string; errorCode?: string; createdAt: string; updatedAt: string; expiresAt?: string;
 }
 export interface ToolStatus { [name: string]: string }
 export interface Settings { defaultQuality: Quality; downloadDirectory: string; organizePlaylist: boolean; avoidDuplicates: boolean; embedThumbnail: boolean; embedMetadata: boolean; openFolderWhenDone: boolean }
-export interface EngineDetection { available: boolean; reachable?: boolean; version?: string; tools?: ToolStatus }
+export type EngineDetectionState = 'NOT_DETECTED' | 'PERMISSION_REQUIRED' | 'REACHABLE' | 'TOOLS_NOT_READY' | 'READY' | 'AUTH_REQUIRED';
+export interface EngineDetection { state: EngineDetectionState; available: boolean; reachable: boolean; baseUrl?: string; version?: string; tools?: ToolStatus; reason?: 'timeout' | 'network' | 'invalid_response' | 'permission' }
 
 export interface DownloadProvider {
   readonly mode: ProcessingMode;

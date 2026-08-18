@@ -36,11 +36,37 @@ describe('detectLocalEngine', () => {
 
   it('reports local mode only after a valid health response', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'ok', mode: 'LOCAL_ENGINE', version: '3.0.0', ready: true }), { status: 200 }));
-    await expect(detectLocalEngine()).resolves.toMatchObject({ available: true, reachable: true, version: '3.0.0' });
+    await expect(detectLocalEngine()).resolves.toMatchObject({ state: 'READY', available: true, reachable: true, version: '3.0.0', baseUrl: 'http://127.0.0.1:38765' });
   });
 
   it('keeps cloud available when the engine cannot be reached', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('network error'));
-    await expect(detectLocalEngine()).resolves.toEqual({ available: false });
+    await expect(detectLocalEngine()).resolves.toMatchObject({ state: 'NOT_DETECTED', available: false, reachable: false, reason: 'network' });
+  });
+
+  it('falls back to localhost when the numeric loopback address is unavailable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input).startsWith('http://127.0.0.1')) throw new TypeError('blocked');
+      return new Response(JSON.stringify({ status: 'ok', mode: 'LOCAL_ENGINE', version: '3.0.1', ready: true }), { status: 200 });
+    });
+    await expect(detectLocalEngine()).resolves.toMatchObject({ state: 'READY', baseUrl: 'http://localhost:38765' });
+  });
+
+  it('distinguishes a reachable engine with incomplete tools', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ status: 'ok', mode: 'LOCAL_ENGINE', ready: false, tools: { deno: 'indisponível' } }), { status: 200 }));
+    await expect(detectLocalEngine()).resolves.toMatchObject({ state: 'TOOLS_NOT_READY', available: false, reachable: true, tools: { deno: 'indisponível' } });
+  });
+
+  it('bounds detection attempts with a timeout', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('timed out', 'AbortError')));
+    }));
+    await expect(detectLocalEngine({ timeoutMs: 5 })).resolves.toMatchObject({ state: 'NOT_DETECTED', reason: 'timeout' });
+  });
+
+  it('reports an explicit local network permission state after an interactive attempt', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('blocked by local network access'));
+	Object.defineProperty(navigator, 'permissions', { configurable: true, value: { query: vi.fn().mockResolvedValue({ state: 'denied' }) } });
+    await expect(detectLocalEngine({ interactive: true })).resolves.toMatchObject({ state: 'PERMISSION_REQUIRED', reason: 'permission' });
   });
 });

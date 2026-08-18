@@ -33,11 +33,12 @@ O site não exige o Engine. Quando ele não está disponível, o modo online con
 
 ## Windows: primeira execução
 
-1. Baixe `MP3_Downloader_v3.0.0_Windows.zip` em **Releases**.
+1. Baixe o ZIP `MP3_Downloader_vX.Y.Z_Windows.zip` da [release mais recente](https://github.com/misaeldasilva123ms96-commits/BAIXAR-MP3/releases/latest).
 2. Compare o SHA-256 com `checksums.sha256` e extraia todo o ZIP.
 3. Abra `ABRIR_MP3_DOWNLOADER.bat`.
 4. O Engine abre a interface em `http://127.0.0.1:38765` e mostra o código de conexão local.
-5. Cole uma URL, escolha a qualidade e confirme o resumo.
+5. No site público, escolha **Conectar Engine**, informe o código e use **Testar conexão**.
+6. Cole uma URL, escolha a qualidade e confirme o resumo.
 
 O pacote inclui `MP3_Downloader.exe`, yt-dlp, FFmpeg, ffprobe, Deno e a interface. Python não é necessário. O V2 continua acessível por `Abrir_Baixador_MP3_V2.bat`.
 
@@ -68,6 +69,9 @@ Limites configuráveis por ambiente incluem concorrência, requisições por min
 | `MP3_GLOBAL_RATE_LIMIT` | `300` | requisições globais por minuto e instância |
 | `MP3_MAX_OUTPUT_MB` | `500` | teto do resultado temporário por job |
 | `MP3_DOWNLOAD_DIR` | `%USERPROFILE%\Downloads\Musicas_MP3` | pasta do modo Windows |
+| `MP3_YOUTUBE_PLAYER_CLIENTS` | vazio | override operacional restrito; vazio preserva o comportamento padrão recomendado pelo yt-dlp |
+
+O runtime distribuído em 3.0.1 usa yt-dlp `2026.07.04`, Deno `2.9.5` e FFmpeg/ffprobe `9.0.1-essentials`. `/health` só retorna `ready=true` quando as quatro ferramentas e o componente EJS embutido no executável oficial são detectados.
 
 ## Arquitetura
 
@@ -119,3 +123,4 @@ Consulte [Deploy](docs/DEPLOY.md), [Release](docs/RELEASE.md), [Guia do usuário
 - Conteúdo privado, autenticado, protegido por DRM ou indisponível não é suportado.
 - Seleção individual de faixas fica para uma fase posterior; o V3 inicial suporta playlist completa e intervalo.
 - Disponibilidade e compatibilidade dependem das plataformas de origem, do yt-dlp e dos limites do provedor de backend.
+- Um IP de datacenter pode receber desafio antibot ou limitação 429 mesmo com o runtime íntegro. Nesse caso a API informa o código real e recomenda aguardar ou usar o Engine local; não existe fallback que garanta acesso ao upstream.

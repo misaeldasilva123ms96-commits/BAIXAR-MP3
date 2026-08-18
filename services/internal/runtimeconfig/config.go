@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,6 +18,11 @@ import (
 )
 
 var toolVersionTimeout = 10 * time.Second
+
+const minimumYTDLPVersion = "2026.07.04"
+const minimumDenoVersion = "2.3.0"
+
+var ejsVersionPattern = regexp.MustCompile(`yt_dlp_ejs-([0-9]+(?:\.[0-9]+)+)`)
 
 func Env(key, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
@@ -56,6 +62,15 @@ func FindTools(root string) (core.ToolPaths, map[string]string, error) {
 	if len(missing) > 0 {
 		return paths, status, errors.New("ferramentas ausentes: " + strings.Join(missing, ", "))
 	}
+	invalid := validateToolVersions(status)
+	ejs := ytdlpRuntimeDiagnostic(ytdlp, deno)
+	status["EJS"] = ejs
+	if ejs == "indisponível" {
+		invalid = append(invalid, "EJS/Deno")
+	}
+	if len(invalid) > 0 {
+		return paths, status, errors.New("runtime incompatível: " + strings.Join(invalid, ", "))
+	}
 	return paths, status, nil
 }
 
@@ -92,6 +107,74 @@ func toolVersion(path, arg string) string {
 		line = line[:120]
 	}
 	return line
+}
+
+func validateToolVersions(status map[string]string) []string {
+	var invalid []string
+	ytdlpFields := strings.Fields(status["yt-dlp"])
+	ytdlpVersion := ""
+	if len(ytdlpFields) > 0 {
+		ytdlpVersion = ytdlpFields[0]
+	}
+	if !versionAtLeast(ytdlpVersion, minimumYTDLPVersion) {
+		status["yt-dlp"] += " (incompatível; mínimo " + minimumYTDLPVersion + ")"
+		invalid = append(invalid, "yt-dlp")
+	}
+	denoFields := strings.Fields(status["deno"])
+	denoVersion := ""
+	if len(denoFields) >= 2 {
+		denoVersion = denoFields[1]
+	}
+	if !versionAtLeast(denoVersion, minimumDenoVersion) {
+		status["deno"] += " (incompatível; mínimo " + minimumDenoVersion + ")"
+		invalid = append(invalid, "deno")
+	}
+	for _, name := range []string{"ffmpeg", "ffprobe"} {
+		if !strings.HasPrefix(strings.ToLower(status[name]), name+" version ") {
+			status[name] += " (versão inválida)"
+			invalid = append(invalid, name)
+		}
+	}
+	return invalid
+}
+
+func versionAtLeast(value, minimum string) bool {
+	valueParts := strings.Split(strings.TrimPrefix(value, "v"), ".")
+	minimumParts := strings.Split(strings.TrimPrefix(minimum, "v"), ".")
+	if len(valueParts) != len(minimumParts) {
+		return false
+	}
+	for i := range minimumParts {
+		valuePart, valueErr := strconv.Atoi(valueParts[i])
+		minimumPart, minimumErr := strconv.Atoi(minimumParts[i])
+		if valueErr != nil || minimumErr != nil {
+			return false
+		}
+		if valuePart > minimumPart {
+			return true
+		}
+		if valuePart < minimumPart {
+			return false
+		}
+	}
+	return true
+}
+
+func ytdlpRuntimeDiagnostic(ytdlp, deno string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), toolVersionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ytdlp, "--verbose", "--ignore-config", "--js-runtimes", "deno:"+deno, "--simulate", "file:///__mp3_runtime_probe__")
+	cmd.Stdin = nil
+	output, _ := cmd.CombinedOutput()
+	return parseYTDLPRuntimeDiagnostic(string(output))
+}
+
+func parseYTDLPRuntimeDiagnostic(value string) string {
+	match := ejsVersionPattern.FindStringSubmatch(value)
+	if len(match) != 2 || !strings.Contains(value, "JS runtimes: deno-") {
+		return "indisponível"
+	}
+	return "yt_dlp_ejs-" + match[1] + " (Deno detectado)"
 }
 
 func EngineToken() (string, error) {

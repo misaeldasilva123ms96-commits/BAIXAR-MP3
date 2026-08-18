@@ -25,7 +25,8 @@ try {
 finally { Pop-Location }
 
 New-Item -ItemType Directory -Path (Join-Path $package 'web') | Out-Null
-$requiredTools = @('yt-dlp.exe','ffmpeg.exe','ffprobe.exe','deno.exe','tools-manifest.json')
+& (Join-Path $PSScriptRoot 'prepare-windows-tools.ps1') -OutputDirectory (Join-Path $root 'ferramentas')
+$requiredTools = @('yt-dlp.exe','ffmpeg.exe','ffprobe.exe','deno.exe','tools-manifest.json','FFmpeg-LICENSE.txt')
 $missingTools = $requiredTools | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root "ferramentas/$_")) }
 if ($missingTools) { throw "Ferramentas verificadas ausentes: $($missingTools -join ', ')" }
 Copy-Item -Path (Join-Path $root 'apps/web/dist/*') -Destination (Join-Path $package 'web') -Recurse

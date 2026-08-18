@@ -7,6 +7,7 @@ if (-not $resolvedSmoke.StartsWith($resolvedTemp, [StringComparison]::OrdinalIgn
 
 New-Item -ItemType Directory -Path (Join-Path $smokeRoot 'web') | Out-Null
 Copy-Item -Path (Join-Path $projectRoot 'apps/web/dist/*') -Destination (Join-Path $smokeRoot 'web') -Recurse
+Copy-Item -LiteralPath (Join-Path $projectRoot 'ferramentas') -Destination $smokeRoot -Recurse
 Push-Location $projectRoot
 try {
     go build -trimpath -buildvcs=false -ldflags '-s -w -buildid=' -o (Join-Path $smokeRoot 'MP3_Downloader.exe') ./services/cmd/local-engine
@@ -35,7 +36,12 @@ try {
         try { $health = Invoke-RestMethod -Uri 'http://127.0.0.1:38765/health' -TimeoutSec 2 } catch { }
     }
     if (-not $health) { throw 'Health local indisponível.' }
+	if (-not $health.ready -or -not $health.tools.EJS) { throw "Runtime local incompleto: $($health.tools | ConvertTo-Json -Compress)" }
     $index = Invoke-WebRequest -Uri 'http://127.0.0.1:38765/' -UseBasicParsing
+	$preflight = Invoke-WebRequest -Uri 'http://127.0.0.1:38765/health' -Method Options -Headers @{ Origin = 'https://misaeldasilva123ms96-commits.github.io'; 'Access-Control-Request-Private-Network' = 'true' } -SkipHttpErrorCheck
+	if ($preflight.StatusCode -ne 204 -or $preflight.Headers.'Access-Control-Allow-Private-Network' -ne 'true') { throw 'Preflight de rede local não foi autorizado corretamente.' }
+	$invalidToken = Invoke-WebRequest -Uri 'http://127.0.0.1:38765/settings' -Headers @{ 'X-MP3-Engine-Token' = 'invalid' } -SkipHttpErrorCheck
+	if ($invalidToken.StatusCode -ne 401) { throw 'Token local inválido não foi rejeitado.' }
     $newSettings = @{
         defaultQuality = '192'; downloadDirectory = (Join-Path $smokeRoot 'music')
         organizePlaylist = $true; avoidDuplicates = $true; embedThumbnail = $true
