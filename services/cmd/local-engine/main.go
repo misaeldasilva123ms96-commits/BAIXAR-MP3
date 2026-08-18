@@ -16,7 +16,7 @@ import (
 	"github.com/misaeldasilva123ms96-commits/baixar-mp3/services/internal/runtimeconfig"
 )
 
-const version = "3.0.0"
+const version = "3.0.1"
 
 func main() {
 	executable, err := os.Executable()
@@ -45,7 +45,7 @@ func main() {
 			return filepath.Join(dataDir, "historico_downloads.txt")
 		}
 		return ""
-	}, Cloud: false, MaxItems: 500}
+	}, Cloud: false, MaxItems: 500, PlayerClients: runtimeconfig.Env("MP3_YOUTUBE_PLAYER_CLIENTS", "")}
 	origins := []string{"https://misaeldasilva123ms96-commits.github.io", "http://127.0.0.1:38765", "http://localhost:38765"}
 	apiHandler := api.NewHandler(api.Config{Mode: core.ModeDesktopLocal, Version: version, AllowedOrigins: origins, EngineToken: token, RateLimit: 120, RateWindow: time.Minute, MaxConcurrent: 1, JobTimeout: 6 * time.Hour, Ready: toolErr == nil, Tools: status, Settings: settings}, processor)
 	webRoot := filepath.Join(root, "web")
@@ -57,7 +57,7 @@ func main() {
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' http://127.0.0.1:38765; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' http://127.0.0.1:38765 http://localhost:38765; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
 		files.ServeHTTP(w, r)
 	})
 	address := "127.0.0.1:38765"

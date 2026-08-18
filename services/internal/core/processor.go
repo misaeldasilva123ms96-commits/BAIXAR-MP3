@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,10 @@ type ExecProcessor struct {
 	MaxOutputBytes  int64
 	OutputRootFunc  func() string
 	ArchivePathFunc func() string
+	PlayerClients   string
+	AnalysisRetries int
+	RetryBaseDelay  time.Duration
+	Sleep           func(context.Context, time.Duration) error
 }
 
 func (p *ExecProcessor) Analyze(ctx context.Context, rawURL string) (Analysis, error) {
@@ -42,13 +47,12 @@ func (p *ExecProcessor) Analyze(ctx context.Context, rawURL string) (Analysis, e
 		maxItems = 100
 	}
 	args := []string{"--ignore-config", "--dump-single-json", "--skip-download", "--flat-playlist", "--playlist-end", strconv.Itoa(maxItems)}
-	args = append(args, youtubeExtractorArguments(p.Cloud)...)
+	args = append(args, runtimeArguments(p.Tools)...)
+	args = append(args, youtubeExtractorArguments(p.PlayerClients)...)
 	args = append(args, rawURL)
-	cmd := exec.CommandContext(ctx, p.Tools.YTDLP, args...)
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
-	output, err := cmd.Output()
+	output, err := p.analyzeWithRetry(ctx, args)
 	if err != nil {
-		return Analysis{}, youtubeCommandError("não foi possível analisar o conteúdo", err, false)
+		return Analysis{}, err
 	}
 	var payload struct {
 		Type       string  `json:"_type"`
@@ -115,7 +119,7 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 		args = append(args[:len(args)-1], "--playlist-end", strconv.Itoa(p.MaxItems), args[len(args)-1])
 	}
 	target := args[len(args)-1]
-	args = append(args[:len(args)-1], youtubeExtractorArguments(p.Cloud)...)
+	args = append(args[:len(args)-1], youtubeExtractorArguments(p.PlayerClients)...)
 	args = append(args, target)
 	cmd := exec.Command(p.Tools.YTDLP, args...) //nolint:noctx // cancellation must terminate the complete process tree below
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
@@ -144,14 +148,28 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	var outputLimitExceeded atomic.Bool
 	var outputScanFailed atomic.Bool
 	var youtubeBotChallenge atomic.Bool
+	var stderrMu sync.Mutex
+	var stderrSample strings.Builder
 
 	var mu sync.Mutex
 	files := []string{}
-	parse := func(reader io.Reader) {
+	parse := func(reader io.Reader, captureErrors bool) {
 		scanner := bufio.NewScanner(reader)
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
+			if captureErrors {
+				stderrMu.Lock()
+				if stderrSample.Len() < 16*1024 {
+					remaining := 16*1024 - stderrSample.Len()
+					if len(line) > remaining {
+						line = line[:remaining]
+					}
+					stderrSample.WriteString(line)
+					stderrSample.WriteByte('\n')
+				}
+				stderrMu.Unlock()
+			}
 			if isYouTubeBotChallenge(line) {
 				youtubeBotChallenge.Store(true)
 			}
@@ -204,8 +222,8 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	}
 	var readers sync.WaitGroup
 	readers.Add(2)
-	go func() { defer readers.Done(); parse(stdout) }()
-	go func() { defer readers.Done(); parse(stderr) }()
+	go func() { defer readers.Done(); parse(stdout, false) }()
+	go func() { defer readers.Done(); parse(stderr, true) }()
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- cmd.Wait() }()
 	var ticker *time.Ticker
@@ -249,7 +267,13 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 		return DownloadResult{}, ctx.Err()
 	}
 	if err != nil {
-		return DownloadResult{}, youtubeCommandError("yt-dlp terminou com erro", err, youtubeBotChallenge.Load())
+		stderrMu.Lock()
+		failureOutput := stderrSample.String()
+		stderrMu.Unlock()
+		if youtubeBotChallenge.Load() && failureOutput == "" {
+			failureOutput = "sign in to confirm you're not a bot"
+		}
+		return DownloadResult{}, classifyYTDLPError(err, failureOutput)
 	}
 	mu.Lock()
 	completedFiles := append([]string(nil), files...)
@@ -284,30 +308,73 @@ func (p *ExecProcessor) Start(ctx context.Context, jobID string, request Downloa
 	return DownloadResult{Title: strings.TrimSuffix(filepath.Base(resultPath), filepath.Ext(resultPath)), Format: format, Quality: request.Quality, FileName: filepath.Base(resultPath), FilePath: resultPath, Size: info.Size(), Count: len(completedFiles)}, nil
 }
 
-func youtubeExtractorArguments(cloud bool) []string {
-	clients := "default,web_embedded"
-	if cloud {
-		clients = "web_embedded,default"
+func runtimeArguments(tools ToolPaths) []string {
+	if tools.Deno == "" {
+		return nil
+	}
+	return []string{"--js-runtimes", "deno:" + tools.Deno}
+}
+
+func youtubeExtractorArguments(clients string) []string {
+	clients = strings.TrimSpace(clients)
+	if clients == "" {
+		return nil
+	}
+	for _, client := range strings.Split(clients, ",") {
+		switch strings.TrimSpace(client) {
+		case "default", "web", "web_embedded", "mweb", "android_vr", "web_safari":
+		default:
+			return nil
+		}
 	}
 	return []string{"--extractor-args", "youtube:player_client=" + clients}
 }
 
-func youtubeCommandError(prefix string, err error, botChallenge bool) error {
-	var exitErr *exec.ExitError
-	if !botChallenge && errors.As(err, &exitErr) {
-		botChallenge = isYouTubeBotChallenge(string(exitErr.Stderr))
+func (p *ExecProcessor) analyzeWithRetry(ctx context.Context, args []string) ([]byte, error) {
+	attempts := p.AnalysisRetries
+	if attempts <= 0 {
+		attempts = 2
 	}
-	if botChallenge {
-		return fmt.Errorf("%s: o YouTube bloqueou temporariamente a solicitação automatizada; tente novamente mais tarde ou use a versão offline", prefix)
+	base := p.RetryBaseDelay
+	if base <= 0 {
+		base = 400 * time.Millisecond
 	}
-	return fmt.Errorf("%s: %w", prefix, err)
+	sleep := p.Sleep
+	if sleep == nil {
+		sleep = func(ctx context.Context, delay time.Duration) error {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+				return nil
+			}
+		}
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
+		cmd := exec.CommandContext(ctx, p.Tools.YTDLP, args...)
+		cmd.Env = append(os.Environ(), "NO_COLOR=1")
+		output, err := cmd.Output()
+		if err == nil {
+			return output, nil
+		}
+		failure := classifyYTDLPError(err, "")
+		if !failure.Retryable || attempt == attempts-1 {
+			return nil, failure
+		}
+		jitter := time.Duration(rand.Int64N(int64(base/2) + 1))
+		if err := sleep(ctx, base*time.Duration(1<<attempt)+jitter); err != nil {
+			return nil, classifyYTDLPError(err, "")
+		}
+	}
+	return nil, &RuntimeError{Code: CodeExtractorFailed, Message: "O extrator não conseguiu processar este conteúdo."}
 }
 
 func isYouTubeBotChallenge(value string) bool {
 	normalized := strings.ToLower(value)
 	return strings.Contains(normalized, "sign in to confirm you’re not a bot") ||
-		strings.Contains(normalized, "sign in to confirm you're not a bot") ||
-		strings.Contains(normalized, "http error 429: too many requests")
+		strings.Contains(normalized, "sign in to confirm you're not a bot")
 }
 
 func first(values ...string) string {

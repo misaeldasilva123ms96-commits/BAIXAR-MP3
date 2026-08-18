@@ -13,7 +13,7 @@
 
 `DownloadProvider` expõe `health`, `analyze`, `download`, `getProgress`, `cancel`, `eventsUrl`, `downloadFile`, `getSettings` e `saveSettings`. `HttpDownloadProvider` recebe modo, URL base e opcionalmente token. A UI não recebe nem produz argumentos de linha de comando.
 
-Os modos são `WEB_CLOUD`, `LOCAL_ENGINE` e `DESKTOP_LOCAL`. A escolha fica visível. Detecção local só é positiva após `/health` retornar status, modo, versão e `ready=true`.
+Os modos são `WEB_CLOUD`, `LOCAL_ENGINE` e `DESKTOP_LOCAL`. A escolha fica visível. A detecção tenta `127.0.0.1` e depois `localhost`, com timeout e no máximo duas tentativas explícitas. Os estados são `NOT_DETECTED`, `PERMISSION_REQUIRED`, `REACHABLE`, `TOOLS_NOT_READY`, `READY` e `AUTH_REQUIRED`; seleção local só ocorre após `/health` pronto e validação do token em `/settings`.
 
 ## API
 
@@ -36,6 +36,8 @@ Playlists cloud com mais de um resultado são empacotadas em ZIP. Um vídeo resu
 
 `ANALYZING`, `QUEUED`, `DOWNLOADING`, `CONVERTING`, `ADDING_METADATA`, `FINALIZING`, `COMPLETED`, `FAILED`, `CANCELLED` e `SKIPPED` formam o vocabulário compartilhado. A implementação só publica percentuais extraídos do yt-dlp e nunca publica 100% antes de `COMPLETED`.
 
+Falhas do upstream usam `YOUTUBE_BOT_CHALLENGE`, `YOUTUBE_PO_TOKEN_REQUIRED`, `YOUTUBE_RATE_LIMITED`, `YOUTUBE_UNAVAILABLE`, `UPSTREAM_TIMEOUT` e `EXTRACTOR_FAILED`. Somente 429 e timeout recebem uma repetição controlada; desafio antibot, PO Token, conteúdo indisponível e falha permanente não são repetidos. Mensagens e jobs não expõem stderr, stack trace, URL completa ou token.
+
 ## Limites de confiança
 
 - Cloud: Internet → CORS permitido → validação de URL → fila/concurrency → processo com argumentos construídos internamente → diretório temporário por job.
@@ -47,5 +49,4 @@ Playlists cloud com mais de um resultado são empacotadas em ZIP. Um vídeo resu
 
 - seleção individual de faixas;
 - shell desktop nativo em vez da UI aberta no navegador;
-- confirmação nativa de pareamento Pages → Engine;
 - assinatura Authenticode do executável.

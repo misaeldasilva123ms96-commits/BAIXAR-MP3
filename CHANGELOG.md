@@ -1,6 +1,23 @@
 # Changelog
 
-## 3.0.0 — não lançado
+## 3.0.1 — não lançado
+
+### Corrigido
+
+- modo online usa a estratégia padrão atual do yt-dlp e classifica erros do YouTube sem expor logs internos;
+- retries são limitados a falhas transitórias, com backoff, jitter, timeout e cancelamento;
+- `/health` só declara prontidão após validar yt-dlp, FFmpeg, ffprobe, Deno e EJS;
+- Engine local pode ser reconectado por ação do usuário em `127.0.0.1` ou `localhost`, com estados reais de permissão, ferramentas e autenticação;
+- CORS local reconhece preflight de Private Network Access somente para origens permitidas;
+- pacote Windows prepara ferramentas automaticamente e verifica os hashes do manifest.
+
+### Ferramentas
+
+- yt-dlp `2026.07.04`;
+- Deno `2.9.5`;
+- FFmpeg e ffprobe `9.0.1-essentials`.
+
+## 3.0.0 — 2026-08-13
 
 ### Adicionado
 

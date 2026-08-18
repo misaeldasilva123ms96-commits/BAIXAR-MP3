@@ -19,15 +19,15 @@ function Receive-VerifiedFile {
 
 try {
     Receive-VerifiedFile `
-        -Url 'https://github.com/yt-dlp/yt-dlp/releases/download/2026.06.09/yt-dlp.exe' `
+        -Url 'https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp.exe' `
         -Destination (Join-Path $output 'yt-dlp.exe') `
-        -Sha256 '3a48cb955d55c8821b60ccbdbbc6f61bc958f2f3d3b7ad5eaf3d83a543293a27'
+        -Sha256 '52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8'
 
     $denoZip = Join-Path $staging 'deno.zip'
     Receive-VerifiedFile `
-        -Url 'https://github.com/denoland/deno/releases/download/v2.8.1/deno-x86_64-pc-windows-msvc.zip' `
+        -Url 'https://github.com/denoland/deno/releases/download/v2.9.5/deno-x86_64-pc-windows-msvc.zip' `
         -Destination $denoZip `
-        -Sha256 '5fb5bac71f609fb91ec8960fb290885aadc27eeb22f07a8eca0c3db6be38b11a'
+        -Sha256 '171efab55ac6b9881fd53ee4c20f8bf3bb1340ffc618483746909014db12216a'
     Expand-Archive -LiteralPath $denoZip -DestinationPath (Join-Path $staging 'deno') -Force
     Copy-Item -LiteralPath (Join-Path $staging 'deno/deno.exe') -Destination (Join-Path $output 'deno.exe') -Force
 
@@ -45,9 +45,15 @@ try {
 	$ffmpegLicense = Get-ChildItem -LiteralPath (Join-Path $staging 'ffmpeg') -Recurse -File | Where-Object { $_.Name -match '^LICENSE' } | Select-Object -First 1
 	if ($ffmpegLicense) { Copy-Item -LiteralPath $ffmpegLicense.FullName -Destination (Join-Path $output 'FFmpeg-LICENSE.txt') -Force }
 
-    $manifest = [ordered]@{
-        tools = [ordered]@{ 'yt-dlp' = '2026.06.09'; deno = '2.8.1'; ffmpeg = '9.0.1-essentials' }
-    } | ConvertTo-Json -Depth 4
+	$manifest = [ordered]@{
+		schemaVersion = 2
+		tools = [ordered]@{
+			'yt-dlp' = [ordered]@{ version = '2026.07.04'; sha256 = (Get-FileHash -LiteralPath (Join-Path $output 'yt-dlp.exe') -Algorithm SHA256).Hash.ToLowerInvariant() }
+			deno = [ordered]@{ version = '2.9.5'; sha256 = (Get-FileHash -LiteralPath (Join-Path $output 'deno.exe') -Algorithm SHA256).Hash.ToLowerInvariant() }
+			ffmpeg = [ordered]@{ version = '9.0.1-essentials'; sha256 = (Get-FileHash -LiteralPath (Join-Path $output 'ffmpeg.exe') -Algorithm SHA256).Hash.ToLowerInvariant() }
+			ffprobe = [ordered]@{ version = '9.0.1-essentials'; sha256 = (Get-FileHash -LiteralPath (Join-Path $output 'ffprobe.exe') -Algorithm SHA256).Hash.ToLowerInvariant() }
+		}
+	} | ConvertTo-Json -Depth 6
     [IO.File]::WriteAllText((Join-Path $output 'tools-manifest.json'), $manifest, [Text.UTF8Encoding]::new($false))
 }
 finally {

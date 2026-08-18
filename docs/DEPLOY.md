@@ -9,7 +9,7 @@ docker run --rm -p 8080:8080 \
   baixar-mp3-api
 ```
 
-Verifique `GET http://127.0.0.1:8080/health`. O campo `ready` precisa ser `true`; isso confirma yt-dlp, FFmpeg, ffprobe e Deno no runtime.
+Verifique `GET http://127.0.0.1:8080/health`. O campo `ready` precisa ser `true`; isso confirma yt-dlp compatível, FFmpeg, ffprobe, Deno e EJS no runtime. Um health verde confirma o runtime, não que o IP do provedor esteja aceito pelo YouTube; faça um smoke externo separado com conteúdo autorizado.
 
 O `render.yaml` fornece uma implantação inicial no Render. Railway, Fly.io, VPS e outros hosts Docker podem usar a mesma imagem. Escolha um plano com disco temporário suficiente e processos longos; planos gratuitos podem suspender ou interromper conversões.
 
@@ -25,6 +25,7 @@ O `render.yaml` fornece uma implantação inicial no Render. Railway, Fly.io, VP
 - `MP3_MAX_OUTPUT_MB=500`
 - `MP3_FILE_TTL=30m`
 - `MP3_JOB_TIMEOUT=30m`
+- `MP3_YOUTUBE_PLAYER_CLIENTS=` (vazio usa o comportamento padrão do yt-dlp; configure somente após diagnóstico documentado)
 
 Não grave secrets na imagem. Monte armazenamento temporário apenas se o provedor exigir; resultados expirados são removidos.
 
@@ -44,3 +45,5 @@ O workflow recusa deploy de `main` quando a variável está vazia. Assim, uma la
 - não registre URLs completas, tokens ou headers;
 - atualize as ferramentas por PR, alterando versão e hash juntos;
 - valide download, cancelamento e cleanup antes de promover uma nova imagem.
+
+O projeto não usa cookies pessoais nem PO Token por padrão. Se o upstream passar a exigir PO Token no ambiente, adote somente um provider versionado e revisado compatível com o yt-dlp, sem enviar token ao frontend ou registrá-lo. A versão 3.0.1 classifica `YOUTUBE_PO_TOKEN_REQUIRED`, mas não instala provider porque os diagnósticos atuais mostraram limitação 429, não ausência comprovada de PO Token.

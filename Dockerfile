@@ -6,11 +6,11 @@ RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" 
 
 FROM debian:12.10-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg unzip && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/download/2026.06.09/yt-dlp_linux \
- && echo "bf8aac79b72287a6d2043074415132558b43743a8f9461a22b0141e90f16ce66  /usr/local/bin/yt-dlp" | sha256sum -c - \
+RUN curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp_linux \
+ && echo "6bbb3d314cde4febe36e5fa1d55462e29c974f63444e707871834f6d8cc210ae  /usr/local/bin/yt-dlp" | sha256sum -c - \
  && chmod 0755 /usr/local/bin/yt-dlp
-RUN curl -fsSL -o /tmp/deno.zip https://github.com/denoland/deno/releases/download/v2.8.1/deno-x86_64-unknown-linux-gnu.zip \
- && echo "2d7bb6195226ac832e0bf7109a115f0af65ee69ac797a4bbde5b27a06cc242d9  /tmp/deno.zip" | sha256sum -c - \
+RUN curl -fsSL -o /tmp/deno.zip https://github.com/denoland/deno/releases/download/v2.9.5/deno-x86_64-unknown-linux-gnu.zip \
+ && echo "8b010a3b1a4a0188a67cdb8a7a27348b2a501af78aec7fc74f2ace167368d530  /tmp/deno.zip" | sha256sum -c - \
  && unzip -q /tmp/deno.zip -d /usr/local/bin && rm /tmp/deno.zip && chmod 0755 /usr/local/bin/deno
 COPY --from=api /mp3-web-api /usr/local/bin/mp3-web-api
 RUN useradd --system --uid 10001 --create-home mp3 && mkdir -p /var/lib/mp3 && chown mp3:mp3 /var/lib/mp3

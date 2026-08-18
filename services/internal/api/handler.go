@@ -55,6 +55,7 @@ type Job struct {
 	Progress  core.ProgressEvent   `json:"progress"`
 	Result    *core.DownloadResult `json:"result,omitempty"`
 	Error     string               `json:"error,omitempty"`
+	ErrorCode string               `json:"errorCode,omitempty"`
 	CreatedAt time.Time            `json:"createdAt"`
 	UpdatedAt time.Time            `json:"updatedAt"`
 	ExpiresAt time.Time            `json:"expiresAt,omitempty"`
@@ -75,7 +76,7 @@ type Handler struct {
 
 func NewHandler(config Config, processor Processor) *Handler {
 	if config.Version == "" {
-		config.Version = "3.0.0"
+		config.Version = "3.0.1"
 	}
 	if config.RateLimit <= 0 {
 		config.RateLimit = 60
@@ -120,9 +121,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	origin := r.Header.Get("Origin")
 	if origin != "" && h.originAllowed(origin) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Vary", "Origin")
+		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Access-Control-Request-Private-Network")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-MP3-Engine-Token")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		localMode := h.config.Mode == core.ModeLocalEngine || h.config.Mode == core.ModeDesktopLocal
+		if localMode && strings.EqualFold(r.Header.Get("Access-Control-Request-Private-Network"), "true") {
+			w.Header().Set("Access-Control-Allow-Private-Network", "true")
+		}
 	}
 	securityHeaders(w)
 	if r.Method == http.MethodOptions {
@@ -203,7 +208,8 @@ func (h *Handler) analyze(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	analysis, err := h.processor.Analyze(ctx, request.URL)
 	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "ANALYZE_FAILED", err.Error())
+		code, message, _ := core.RuntimeErrorDetails(err)
+		writeError(w, upstreamStatus(code), string(code), message)
 		return
 	}
 	writeJSON(w, http.StatusOK, analysis)
@@ -319,7 +325,14 @@ func (h *Handler) finishError(id string, state core.JobState, err error) {
 	defer h.mu.Unlock()
 	if job := h.jobs[id]; job != nil {
 		job.State = state
-		job.Error = publicError(err)
+		if errors.Is(err, context.Canceled) {
+			job.ErrorCode, job.Error = "CANCELLED", "O processamento foi cancelado."
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			job.ErrorCode, job.Error = string(core.CodeUpstreamTimeout), "O processamento excedeu o tempo limite."
+		} else {
+			code, message, _ := core.RuntimeErrorDetails(err)
+			job.ErrorCode, job.Error = string(code), message
+		}
 		job.Progress = core.ProgressEvent{JobID: id, State: state, Message: job.Error, UpdatedAt: now}
 		job.UpdatedAt = now
 		if h.config.Mode == core.ModeWebCloud {
@@ -530,15 +543,13 @@ func newID() (string, error) {
 	}
 	return "job_" + hex.EncodeToString(value), nil
 }
-func publicError(err error) string {
-	if err == nil {
-		return "Erro desconhecido."
+func upstreamStatus(code core.ErrorCode) int {
+	switch code {
+	case core.CodeYouTubeRateLimited, core.CodeYouTubeBotChallenge, core.CodeYouTubePOToken:
+		return http.StatusServiceUnavailable
+	case core.CodeUpstreamTimeout:
+		return http.StatusGatewayTimeout
+	default:
+		return http.StatusUnprocessableEntity
 	}
-	value := err.Error()
-	value = strings.ReplaceAll(value, "\r", " ")
-	value = strings.ReplaceAll(value, "\n", " ")
-	if len(value) > 300 {
-		value = value[:300]
-	}
-	return value
 }

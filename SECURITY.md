@@ -14,10 +14,10 @@ Use o recurso privado **Report a vulnerability** do GitHub Security Advisories d
 - localhost, IPs privados/reservados, credenciais em URL, `file://` e `ftp://` são rejeitados;
 - redirects e alterações de comportamento do extrator devem ser reavaliados a cada atualização do yt-dlp;
 - a API converte campos tipados em uma allowlist interna de argumentos;
-- o Engine escuta exclusivamente em `127.0.0.1:38765`, restringe CORS e exige token para POST/DELETE;
+- o Engine escuta exclusivamente em `127.0.0.1:38765`, restringe CORS à origem oficial/local, responde ao preflight PNA somente para origens permitidas e exige token para operações sensíveis;
 - cloud usa fila, rate limit por IP, timeout, limite de playlist, diretório por job e TTL;
 - resultados cloud são temporários e não formam biblioteca;
-- ferramentas do pacote são obtidas por URL versionada e SHA-256 fixo;
+- ferramentas do pacote são obtidas por URL versionada e SHA-256 fixo; o pacote recalcula os hashes registrados no manifest;
 - releases possuem checksums e atestação de proveniência.
 
 ## Limitações

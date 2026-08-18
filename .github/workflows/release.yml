@@ -62,9 +62,6 @@ jobs:
           npm test
           go test ./services/...
           ./tests/legacy-contract.ps1
-      - name: Download pinned and verified Windows tools
-        shell: pwsh
-        run: ./scripts/prepare-windows-tools.ps1
       - name: Build release package
         shell: pwsh
         run: |

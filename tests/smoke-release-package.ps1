@@ -8,6 +8,9 @@ $manifestPath = Join-Path $package 'ferramentas/tools-manifest.json'
 if (-not (Test-Path -LiteralPath $enginePath) -or -not (Test-Path -LiteralPath $manifestPath)) {
     throw 'Pacote Windows incompleto.'
 }
+$requiredPackageFiles = @('web/index.html','ferramentas/yt-dlp.exe','ferramentas/ffmpeg.exe','ferramentas/ffprobe.exe','ferramentas/deno.exe','README.md','SECURITY.md','docs/GUIA_DO_USUARIO.md')
+$missingPackageFiles = $requiredPackageFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $package $_)) }
+if ($missingPackageFiles) { throw "Arquivos ausentes no pacote: $($missingPackageFiles -join ', ')" }
 
 $smoke = Join-Path ([IO.Path]::GetTempPath()) ('mp3-release-smoke-' + [guid]::NewGuid().ToString('N'))
 $resolvedTemp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
@@ -37,7 +40,22 @@ try {
     }
     if (-not $health) { throw "Health do pacote indisponível: $(Get-Content -LiteralPath $errorLog -Raw)" }
     if (-not $health.ready) { throw "Ferramentas do pacote não ficaram prontas: $($health.tools | ConvertTo-Json -Compress)" }
+	if (-not $health.tools.EJS -or $health.tools.EJS -eq 'indisponível') { throw 'Diagnóstico EJS ausente no health.' }
+	$ui = Invoke-WebRequest -Uri 'http://127.0.0.1:38765/' -TimeoutSec 5
+	if ($ui.StatusCode -ne 200 -or $ui.Content -notmatch 'root') { throw 'Interface local não abriu.' }
+	$invalid = Invoke-WebRequest -Uri 'http://127.0.0.1:38765/settings' -Headers @{ 'X-MP3-Engine-Token' = 'invalid' } -SkipHttpErrorCheck -TimeoutSec 5
+	if ($invalid.StatusCode -ne 401) { throw "Token inválido não foi rejeitado: $($invalid.StatusCode)" }
+	$valid = Invoke-WebRequest -Uri 'http://127.0.0.1:38765/settings' -Headers @{ 'X-MP3-Engine-Token' = $env:MP3_ENGINE_TOKEN } -SkipHttpErrorCheck -TimeoutSec 5
+	if ($valid.StatusCode -ne 200) { throw "Token válido não foi aceito: $($valid.StatusCode)" }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+	if ($manifest.schemaVersion -ne 2) { throw 'Manifesto de ferramentas incompatível.' }
+	$toolFiles = @{ 'yt-dlp' = 'yt-dlp.exe'; deno = 'deno.exe'; ffmpeg = 'ffmpeg.exe'; ffprobe = 'ffprobe.exe' }
+	foreach ($name in $toolFiles.Keys) {
+		$path = Join-Path $package "ferramentas/$($toolFiles[$name])"
+		if (-not (Test-Path -LiteralPath $path)) { throw "Ferramenta ausente: $name" }
+		$actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+		if ($actual -ne $manifest.tools.$name.sha256) { throw "Hash inválido no pacote: $name" }
+	}
     [pscustomobject]@{ Health = $health.status; Ready = $health.ready; Mode = $health.mode; Tools = $manifest.tools }
 }
 finally {

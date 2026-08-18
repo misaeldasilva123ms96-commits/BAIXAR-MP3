@@ -16,6 +16,17 @@ import (
 
 type fakeProcessor struct{}
 
+type failingProcessor struct {
+	code core.ErrorCode
+}
+
+func (p failingProcessor) Analyze(context.Context, string) (core.Analysis, error) {
+	return core.Analysis{}, &core.RuntimeError{Code: p.code, Message: "safe upstream message", Retryable: p.code == core.CodeYouTubeRateLimited}
+}
+func (p failingProcessor) Start(context.Context, string, core.DownloadRequest, func(core.ProgressEvent)) (core.DownloadResult, error) {
+	return core.DownloadResult{}, &core.RuntimeError{Code: p.code, Message: "safe upstream message"}
+}
+
 func (fakeProcessor) Analyze(_ context.Context, rawURL string) (core.Analysis, error) {
 	return core.Analysis{Type: "video", Title: "Real title from processor", WebpageURL: rawURL}, nil
 }
@@ -106,6 +117,42 @@ func TestCORSIsRestricted(t *testing.T) {
 		if !tc.allowed && got != "" {
 			t.Errorf("unexpected origin allowed: %q", got)
 		}
+	}
+}
+
+func TestPrivateNetworkPreflightIsGrantedOnlyToAllowedOrigin(t *testing.T) {
+	h := NewHandler(Config{Mode: core.ModeLocalEngine, AllowedOrigins: []string{"https://misaeldasilva123ms96-commits.github.io"}}, fakeProcessor{})
+	for _, origin := range []string{"https://misaeldasilva123ms96-commits.github.io", "https://evil.example"} {
+		r := httptest.NewRequest(http.MethodOptions, "/health", nil)
+		r.Header.Set("Origin", origin)
+		r.Header.Set("Access-Control-Request-Private-Network", "true")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		got := w.Header().Get("Access-Control-Allow-Private-Network")
+		if origin == "https://misaeldasilva123ms96-commits.github.io" && got != "true" {
+			t.Fatalf("allowed PNA preflight missing grant: %q", got)
+		}
+		if origin == "https://evil.example" && got != "" {
+			t.Fatalf("unknown origin received PNA grant: %q", got)
+		}
+	}
+}
+
+func TestAnalyzeReturnsStructuredUpstreamError(t *testing.T) {
+	h := NewHandler(Config{Mode: core.ModeWebCloud}, failingProcessor{code: core.CodeYouTubeRateLimited})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/analyze", bytes.NewBufferString(`{"url":"https://youtu.be/abc"}`)))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Error struct{ Code, Message string } `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != string(core.CodeYouTubeRateLimited) || body.Error.Message != "safe upstream message" {
+		t.Fatalf("unexpected error: %#v", body.Error)
 	}
 }
 
